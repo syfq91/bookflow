@@ -91,7 +91,9 @@ Optimization runs only when an X3/X4 download is requested — never during
 scans or startup — using a vendored copy of the
 [epubkit](https://github.com/b1rdmania/epubkit) pipeline. Results are cached
 under `data/cache/optimized/{x3,x4}/` and rebuilt automatically when the
-source file changes. The original library files are never modified.
+source file changes. The original library files are never modified. The
+dashboard's **Clear cache** action empties the cache and its index rows;
+the next X3/X4 download regenerates the EPUB on demand.
 
 ## Development
 

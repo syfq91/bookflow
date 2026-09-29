@@ -60,6 +60,14 @@
       <dt>X4</dt>
       <dd>{{ stats.cache.x4|filesizeformat }}</dd>
     </dl>
+    <form
+      method="post"
+      action="{{ url_for('admin.cache_clear') }}"
+      onsubmit="return confirm('Delete all cached X3/X4 EPUBs and rebuild on the next download? Library files are not affected.');"
+    >
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <button type="submit" class="secondary">Clear cache</button>
+    </form>
   </section>
   <section class="card">
     <h2>Health</h2>

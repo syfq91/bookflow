@@ -22,7 +22,7 @@ from bookflow.library.service import add_folder
 from bookflow.optimizer import service as optimizer_service
 from bookflow.optimizer.locks import profile_lock
 from bookflow.optimizer.service import optimize_book
-from factories import make_epub, make_pdf
+from factories import csrf_token, make_epub, make_pdf
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PASSWORD = "opds-pass"
@@ -120,6 +120,25 @@ def _library_book(root: Path, folder_id: int, title: str = "Dune") -> tuple[int,
     make_epub(source, title=title, authors=("Frank Herbert",))
     _scan(folder_id)
     return _book_ids()[0], source
+
+
+def _login(client) -> None:
+    resp = client.post(
+        "/admin/login",
+        data={
+            "csrf_token": csrf_token(client),
+            "username": "admin",
+            "password": PASSWORD,
+        },
+    )
+    assert resp.status_code == 302
+
+
+def _clear_cache(client):
+    return client.post(
+        "/admin/cache/clear",
+        data={"csrf_token": csrf_token(client)},
+    )
 
 
 # --- optimized acquisition --------------------------------------------------
@@ -376,3 +395,69 @@ def test_profile_locks_are_independent() -> None:
     assert profile_lock(1, "x3") is profile_lock(1, "x3")
     assert profile_lock(1, "x3") is not profile_lock(1, "x4")
     assert profile_lock(1, "x3") is not profile_lock(2, "x3")
+
+
+# --- cache management --------------------------------------------------------
+
+
+def test_cache_clear_requires_login(client, folder_id, root) -> None:
+    resp = client.post(
+        "/admin/cache/clear", data={"csrf_token": csrf_token(client)}
+    )
+
+    assert resp.status_code == 302
+    assert "/admin/login" in resp.headers["Location"]
+
+
+def test_cache_clear_requires_csrf(client, folder_id, root) -> None:
+    _login(client)
+
+    resp = client.post("/admin/cache/clear")
+
+    assert resp.status_code == 400
+
+
+def test_cache_clear_removes_files_and_rows(
+    client, app, folder_id, root
+) -> None:
+    book_id, source = _library_book(root, folder_id)
+    source_bytes = source.read_bytes()
+    assert _get(client, f"/opds/x3/download/{book_id}").status_code == 200
+    settings = app.config["SETTINGS"]
+    assert (settings.x3_cache_dir / f"{book_id}.epub").is_file()
+
+    _login(client)
+    resp = _clear_cache(client)
+
+    assert resp.status_code == 302
+    assert resp.headers["Location"].endswith("/admin/")
+    assert _optimized_rows(book_id) == []
+    leftover = [
+        entry
+        for directory in (settings.x3_cache_dir, settings.x4_cache_dir)
+        if directory.is_dir()
+        for entry in directory.iterdir()
+    ]
+    assert leftover == []
+    assert source.read_bytes() == source_bytes
+
+    follow = client.get(resp.headers["Location"])
+    assert follow.status_code == 200
+    assert b"Cleared optimization cache" in follow.data
+
+
+def test_download_regenerates_after_cache_clear(
+    client, folder_id, root
+) -> None:
+    book_id, _source = _library_book(root, folder_id)
+    first = _get(client, f"/opds/x3/download/{book_id}")
+    assert first.status_code == 200
+
+    _login(client)
+    assert _clear_cache(client).status_code == 302
+    assert _optimized_rows(book_id) == []
+
+    again = _get(client, f"/opds/x3/download/{book_id}")
+    assert again.status_code == 200
+    assert again.data[:2] == b"PK"
+    assert len(_optimized_rows(book_id)) == 1

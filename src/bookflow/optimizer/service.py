@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import uuid
 from pathlib import Path
 
 from flask import current_app
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from bookflow.database.database import session_scope
 from bookflow.database.models import OptimizedBook
@@ -46,6 +47,32 @@ def optimize_book(book_id: int, profile: str, source: Path) -> Path:
         _generate(source, cache_file, profile)
         _record(book_id, profile, cache_file, source_mtime, source_size)
         return cache_file
+
+
+def clear_optimized_cache() -> tuple[int, int]:
+    """Delete every cached rendition and its index row.
+
+    Only ``data/cache/optimized/`` is touched: source library files are
+    never modified. The next X3/X4 download regenerates the EPUB on
+    demand. Returns ``(files_removed, rows_removed)``.
+    """
+    settings = current_app.config["SETTINGS"]
+    files = 0
+    for directory in (settings.x3_cache_dir, settings.x4_cache_dir):
+        if not directory.is_dir():
+            continue
+        for entry in directory.iterdir():
+            if entry.is_dir():
+                shutil.rmtree(entry, ignore_errors=True)
+            else:
+                entry.unlink(missing_ok=True)
+            files += 1
+    with session_scope() as session:
+        rows = int(session.execute(delete(OptimizedBook)).rowcount or 0)
+    logger.info(
+        "cleared optimization cache: %d file(s), %d row(s)", files, rows
+    )
+    return files, rows
 
 
 def _cache_file(book_id: int, profile: str) -> Path:

@@ -28,6 +28,7 @@ from bookflow.library.service import (
     list_folders,
     remove_folder,
 )
+from bookflow.optimizer.service import clear_optimized_cache
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -111,6 +112,18 @@ def folder_delete(folder_id: int):
         "ok",
     )
     return redirect(url_for("admin.folders"))
+
+
+@bp.post("/cache/clear")
+@login_required
+def cache_clear():
+    files, rows = clear_optimized_cache()
+    flash(
+        f"Cleared optimization cache: {files} file(s) and {rows} index "
+        "row(s) removed. The next X3/X4 download rebuilds on demand.",
+        "ok",
+    )
+    return redirect(url_for("admin.dashboard"))
 
 
 @bp.get("/health")
