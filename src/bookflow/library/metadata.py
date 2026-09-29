@@ -12,7 +12,7 @@ import logging
 import re
 import zipfile
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from xml.etree import ElementTree
 
 from pypdf import PdfReader
@@ -219,3 +219,65 @@ def _attr(element: ElementTree.Element, name: str) -> str:
 def _strip_html(value: str) -> str:
     text = _TAG_RE.sub(" ", html.unescape(value))
     return _WS_RE.sub(" ", text).strip()
+
+
+# --- covers ----------------------------------------------------------------
+
+
+def extract_cover(path: Path) -> tuple[bytes, str] | None:
+    """Return the EPUB cover as ``(image_bytes, media_type)``, or None."""
+    try:
+        with zipfile.ZipFile(path) as archive:
+            opf_path = _opf_path(archive)
+            if not opf_path:
+                return None
+            root = ElementTree.fromstring(archive.read(opf_path))
+            cover = _cover_item(root)
+            if cover is None:
+                return None
+            target = _zip_resolve(opf_path, cover[0])
+            if target is None:
+                return None
+            return archive.read(target), cover[1]
+    except Exception:  # a bad file must never abort a request
+        logger.debug("cover extraction failed for %s", path, exc_info=True)
+        return None
+
+
+def _cover_item(root: ElementTree.Element) -> tuple[str, str] | None:
+    """Locate the cover manifest item: EPUB3 property, then EPUB2 meta."""
+    for item in _elements(root, "item"):
+        if "cover-image" in (item.get("properties") or "").split():
+            href = item.get("href")
+            if href:
+                return href, item.get("media-type") or "image/jpeg"
+
+    cover_id = None
+    for meta in _elements(root, "meta"):
+        if (meta.get("name") or "").lower() == "cover":
+            cover_id = meta.get("content")
+            break
+    if cover_id:
+        for item in _elements(root, "item"):
+            if item.get("id") == cover_id:
+                href = item.get("href")
+                if href:
+                    return href, item.get("media-type") or "image/jpeg"
+    return None
+
+
+def _zip_resolve(opf_path: str, href: str) -> str | None:
+    """Resolve ``href`` relative to the OPF inside the archive."""
+    clean = href.split("#", 1)[0].split("?", 1)[0]
+    if not clean:
+        return None
+    parts: list[str] = []
+    base = PurePosixPath(opf_path).parent
+    for segment in (*base.parts, *PurePosixPath(clean).parts):
+        if segment == "..":
+            if not parts:
+                return None
+            parts.pop()
+        elif segment not in (".", "/"):
+            parts.append(segment)
+    return "/".join(parts)

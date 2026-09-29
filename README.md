@@ -35,8 +35,8 @@ All settings come from environment variables (defaults in parentheses):
 ## Admin UI
 
 Set `OPDS_ADMIN_PASSWORD` and open `/admin/login`. Admin routes require a
-session; OPDS routes (added in later milestones) use HTTP Basic Auth with the
-same credentials. Without `OPDS_ADMIN_PASSWORD` the login form returns `503`.
+session; the OPDS routes use HTTP Basic Auth with the same credentials.
+Without `OPDS_ADMIN_PASSWORD` the login form and the OPDS catalog return `503`.
 
 ## Library folders
 
@@ -49,6 +49,23 @@ indexes it immediately, and **Scan** re-indexes it:
 - if a folder becomes unavailable, its index is kept and the scan is marked
   `error` until it returns
 - concurrent scans of the same folder are rejected with `409`
+
+## OPDS catalog
+
+Point any OPDS client at `/opds` using the admin credentials (HTTP Basic).
+All catalog responses are Atom/OPDS XML; errors under `/opds/*` are XML too.
+
+| Endpoint              | Contents                                              |
+| --------------------- | ----------------------------------------------------- |
+| `/opds`               | Root navigation feed: All Books, Recent, Authors, Search |
+| `/opds/books?page=N`  | All books, A→Z, 50 per page                           |
+| `/opds/recent?page=N` | Books newest first                                    |
+| `/opds/authors`       | Authors grouped by name, with book counts             |
+| `/opds/authors/<name>`| That author's books                                   |
+| `/opds/search?q=…`    | Search across title, authors, description, series, publisher, ISBN |
+| `/opds/books/<id>`    | Feed for a single book                                |
+| `/opds/download/<id>` | The book file itself (attachment)                     |
+| `/opds/cover/<id>`    | Cover image extracted from the EPUB on demand (`404` when absent) |
 
 ## Development
 

@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+import base64
+import mimetypes
 import secrets
 import zipfile
 from pathlib import Path
 
 from pypdf import PdfWriter
+
+# 1x1 transparent PNG
+PNG_BYTES = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ"
+    "AAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+)
 
 CONTAINER_XML = """<?xml version="1.0" encoding="utf-8"?>
 <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
@@ -29,6 +37,7 @@ def make_epub(
     description: str | None = None,
     series: str | None = None,
     series_index: float | None = None,
+    cover: tuple[str, bytes] | None = None,
 ) -> Path:
     """Write a minimal EPUB carrying the given metadata."""
     entries = [
@@ -51,6 +60,16 @@ def make_epub(
             f'<meta name="calibre:series_index" content="{series_index}"/>'
         )
 
+    cover_item = ""
+    if cover:
+        cover_name, _cover_bytes = cover
+        entries.append('<meta name="cover" content="cover-image"/>')
+        cover_media_type = mimetypes.guess_type(cover_name)[0] or "image/jpeg"
+        cover_item = (
+            f'<item id="cover-image" href="{cover_name}" '
+            f'media-type="{cover_media_type}"/>'
+        )
+
     metadata = "\n    ".join(entries)
     opf = f"""<?xml version="1.0" encoding="utf-8"?>
 <package xmlns="http://www.idpf.org/2007/opf"
@@ -61,6 +80,7 @@ def make_epub(
   </metadata>
   <manifest>
     <item id="c1" href="chapter.xhtml" media-type="application/xhtml+xml"/>
+    {cover_item}
   </manifest>
   <spine>
     <itemref idref="c1"/>
@@ -78,6 +98,8 @@ def make_epub(
         archive.writestr("META-INF/container.xml", CONTAINER_XML)
         archive.writestr("OEBPS/content.opf", opf)
         archive.writestr("OEBPS/chapter.xhtml", chapter)
+        if cover:
+            archive.writestr(f"OEBPS/{cover[0]}", cover[1])
     return path
 
 
