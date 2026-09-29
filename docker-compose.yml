@@ -8,10 +8,6 @@ services:
     # Host bind/port: localhost only. Use "0.0.0.0:8000:8000" for LAN.
     ports:
       - "127.0.0.1:8000:8000"
-      # - "0.0.0.0:8000:8000"
-    # Values are literal, so compose no longer reads .env for ${...}
-    # interpolation — edit them here. Commented lines use the app
-    # defaults (see .env.example and README.md).
     environment:
       # Required: without it OPDS returns 503 and admin login is locked.
       OPDS_ADMIN_PASSWORD: change-me
@@ -24,8 +20,7 @@ services:
       # GUNICORN_WORKERS: "2"
     volumes:
       - bookflow-data:/app/data
-      - ./library:/library:ro
-      # - /srv/books:/library:ro
+      #- ./library:/library:ro
     restart: unless-stopped
     healthcheck:
       test:
