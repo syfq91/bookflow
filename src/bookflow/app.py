@@ -9,6 +9,7 @@ from bookflow.auth.routes import bp as auth_bp
 from bookflow.auth.service import LoginRateLimiter, PasswordVerifier, ensure_csrf_token
 from bookflow.config import Settings
 from bookflow.database.database import init_engine
+from bookflow.opds.progression import bp as progression_bp
 from bookflow.opds.routes import bp as opds_bp
 
 
@@ -39,6 +40,7 @@ def create_app(settings: Settings | None = None) -> Flask:
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(opds_bp)
+    app.register_blueprint(progression_bp)
 
     @app.get("/healthz")
     def healthz():

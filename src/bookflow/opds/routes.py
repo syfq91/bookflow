@@ -20,7 +20,11 @@ from sqlalchemy.exc import OperationalError
 from bookflow.database.database import session_scope
 from bookflow.database.models import Book
 from bookflow.library.metadata import extract_cover
-from bookflow.opds.auth import authenticate
+from bookflow.opds.auth import (
+    AUTH_DOCUMENT_TYPE,
+    authenticate,
+    authentication_document,
+)
 from bookflow.opds.generator import (
     ACQUISITION_TYPE,
     NAVIGATION_TYPE,
@@ -40,11 +44,21 @@ PAGE_SIZE = 50
 
 @bp.before_request
 def _require_basic_auth():
+    if request.endpoint == "opds.authentication":
+        return None
     verifier = current_app.extensions["password_verifier"]
     return authenticate(verifier, request.authorization)
 
 
 # --- discovery --------------------------------------------------------------
+
+
+@bp.get("/authentication")
+def authentication():
+    """Serve the OPDS Authentication Document (public, per specification)."""
+    return Response(
+        authentication_document(), content_type=AUTH_DOCUMENT_TYPE
+    )
 
 
 @bp.get("/")

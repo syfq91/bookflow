@@ -25,8 +25,11 @@ ACQUISITION_TYPE = "application/atom+xml;profile=opds-catalog;kind=acquisition"
 ACQUISITION_REL = "http://opds-spec.org/acquisition"
 IMAGE_REL = "http://opds-spec.org/image"
 THUMBNAIL_REL = "http://opds-spec.org/image/thumbnail"
+PROGRESSION_REL = "http://opds-spec.org/progression"
 SUBSECTION_REL = "subsection"
 SEARCH_REL = "search"
+
+PROGRESSION_TYPE = "application/opds-progression+json"
 
 BOOK_MIME_TYPES = {
     ".epub": "application/epub+zip",
@@ -120,6 +123,14 @@ def book_entry(book: Book) -> ElementTree.Element:
     cover = url_for("opds.cover", book_id=book.id)
     _add_link(entry, Link(THUMBNAIL_REL, cover))
     _add_link(entry, Link(IMAGE_REL, cover))
+    _add_link(
+        entry,
+        Link(
+            PROGRESSION_REL,
+            url_for("progression.publication_progression", book_id=book.id),
+            PROGRESSION_TYPE,
+        ),
+    )
     return entry
 
 

@@ -54,6 +54,9 @@ indexes it immediately, and **Scan** re-indexes it:
 
 Point any OPDS client at `/opds` using the admin credentials (HTTP Basic).
 All catalog responses are Atom/OPDS XML; errors under `/opds/*` are XML too.
+A `401` returns the OPDS Authentication Document
+(`application/opds-authentication+json`), which is also served publicly at
+`/opds/authentication`.
 
 | Endpoint              | Contents                                              |
 | --------------------- | ----------------------------------------------------- |
@@ -66,6 +69,7 @@ All catalog responses are Atom/OPDS XML; errors under `/opds/*` are XML too.
 | `/opds/books/<id>`    | Feed for a single book                                |
 | `/opds/download/<id>` | The book file itself (attachment)                     |
 | `/opds/cover/<id>`    | Cover image extracted from the EPUB on demand (`404` when absent) |
+| `/opds/publications/<id>/progression` | Reading position per OPDS Progression 1.0: `GET` reads, `PUT` updates (`application/opds-progression+json`); conflicts are `409` problem details |
 
 ## Development
 

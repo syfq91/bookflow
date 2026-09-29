@@ -184,7 +184,7 @@ def test_rescan_removes_deleted_files(folder_id: int, root: Path) -> None:
     _scan(folder_id)
     with session_scope() as session:
         book = session.query(Book).one()
-        session.add(Progression(book_id=book.id, progression={"position": 1}))
+        session.add(Progression(book_id=book.id, progression=0.42))
 
     path.unlink()
     result = _scan(folder_id)
