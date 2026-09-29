@@ -86,11 +86,12 @@ def acquisition_feed(
     books: Sequence[Book],
     links: Sequence[Link] = (),
     next_href: str | None = None,
+    profile: str | None = None,
 ) -> bytes:
     """Serialize an acquisition catalog feed."""
     feed = _new_feed(title, updated, self_href, ACQUISITION_TYPE)
     for book in books:
-        feed.append(book_entry(book))
+        feed.append(book_entry(book, profile))
     for link in links:
         _add_link(feed, link)
     if next_href:
@@ -98,8 +99,12 @@ def acquisition_feed(
     return _serialize(feed)
 
 
-def book_entry(book: Book) -> ElementTree.Element:
-    """Build the Atom entry for one book."""
+def book_entry(book: Book, profile: str | None = None) -> ElementTree.Element:
+    """Build the Atom entry for one book.
+
+    With a device ``profile``, EPUB acquisitions point at that profile's
+    optimized download; other formats fall back to the original file.
+    """
     entry = ElementTree.Element(f"{{{ATOM_NS}}}entry")
     created = book.created_at or EPOCH
     _add_text(entry, "id", f"tag:bookflow,{created:%Y-%m-%d},book/{book.id}")
@@ -111,12 +116,13 @@ def book_entry(book: Book) -> ElementTree.Element:
     if book.description:
         _add_text(entry, "summary", book.description)
 
+    acquisition_href, acquisition_type = _acquisition(book, profile)
     _add_link(
         entry,
         Link(
             ACQUISITION_REL,
-            url_for("opds.download", book_id=book.id),
-            book_mime_type(book.relative_path),
+            acquisition_href,
+            acquisition_type,
             title="Download",
         ),
     )
@@ -132,6 +138,16 @@ def book_entry(book: Book) -> ElementTree.Element:
         ),
     )
     return entry
+
+
+def _acquisition(book: Book, profile: str | None) -> tuple[str, str]:
+    if profile and book.relative_path.lower().endswith(".epub"):
+        endpoint = f"opds.{profile}_download"
+        return url_for(endpoint, book_id=book.id), "application/epub+zip"
+    return (
+        url_for("opds.download", book_id=book.id),
+        book_mime_type(book.relative_path),
+    )
 
 
 def author_entry(name: str, count: int, href: str, updated: datetime | None):

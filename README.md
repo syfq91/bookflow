@@ -60,7 +60,7 @@ A `401` returns the OPDS Authentication Document
 
 | Endpoint              | Contents                                              |
 | --------------------- | ----------------------------------------------------- |
-| `/opds`               | Root navigation feed: All Books, Recent, Authors, Search |
+| `/opds`               | Root navigation feed: All Books, Recent, Authors, Search, X3/X4 Catalogs |
 | `/opds/books?page=N`  | All books, A→Z, 50 per page                           |
 | `/opds/recent?page=N` | Books newest first                                    |
 | `/opds/authors`       | Authors grouped by name, with book counts             |
@@ -69,9 +69,17 @@ A `401` returns the OPDS Authentication Document
 | `/opds/books/<id>`    | Feed for a single book                                |
 | `/opds/download/<id>` | The book file itself (attachment)                     |
 | `/opds/cover/<id>`    | Cover image extracted from the EPUB on demand (`404` when absent) |
+| `/opds/x3`            | Xteink X3 catalog: every book, EPUBs acquired via the X3 download |
+| `/opds/x3/books/<id>` | Single-book feed in the X3 catalog                    |
 | `/opds/x3/download/<id>` | EPUB optimized for the Xteink X3 (on demand, cached) |
+| `/opds/x4`            | Xteink X4 catalog: every book, EPUBs acquired via the X4 download |
+| `/opds/x4/books/<id>` | Single-book feed in the X4 catalog                    |
 | `/opds/x4/download/<id>` | EPUB optimized for the Xteink X4 (on demand, cached) |
 | `/opds/publications/<id>/progression` | Reading position per OPDS Progression 1.0: `GET` reads, `PUT` updates (`application/opds-progression+json`); conflicts are `409` problem details |
+
+The X3/X4 catalogs contain the full library; only EPUB entries use the
+device's optimized download, while other formats fall back to the original
+file so no acquisition link is ever broken.
 
 Optimization runs only when an X3/X4 download is requested — never during
 scans or startup — using a vendored copy of the

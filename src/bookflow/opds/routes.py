@@ -85,6 +85,18 @@ def root_feed():
             title="Authors",
         ),
         Link(
+            SUBSECTION_REL,
+            url_for("opds.x3_feed"),
+            ACQUISITION_TYPE,
+            title="X3 Catalog",
+        ),
+        Link(
+            SUBSECTION_REL,
+            url_for("opds.x4_feed"),
+            ACQUISITION_TYPE,
+            title="X4 Catalog",
+        ),
+        Link(
             SEARCH_REL,
             f"{url_for('opds.search_feed')}?q={{searchTerms}}",
             ACQUISITION_TYPE,
@@ -154,6 +166,44 @@ def recent_feed():
         self_href=url_for("opds.recent_feed", page=page if page > 1 else None),
         books=books,
         next_href=next_href,
+    )
+    return Response(data, content_type=ACQUISITION_TYPE)
+
+
+# --- device catalogs --------------------------------------------------------
+
+
+@bp.get("/x3")
+def x3_feed():
+    return _device_feed("x3")
+
+
+@bp.get("/x4")
+def x4_feed():
+    return _device_feed("x4")
+
+
+def _device_feed(profile: str):
+    page = _page()
+    offset = (page - 1) * PAGE_SIZE
+    with session_scope() as session:
+        total = int(session.scalar(select(func.count(Book.id))) or 0)
+        updated = session.scalar(select(func.max(Book.updated_at)))
+        books = _page_of_books(session, offset)
+    next_href = (
+        url_for(f"opds.{profile}_feed", page=page + 1)
+        if offset + len(books) < total
+        else None
+    )
+    data = acquisition_feed(
+        title=f"BookFlow — {profile.upper()} Catalog",
+        updated=updated,
+        self_href=url_for(
+            f"opds.{profile}_feed", page=page if page > 1 else None
+        ),
+        books=books,
+        next_href=next_href,
+        profile=profile,
     )
     return Response(data, content_type=ACQUISITION_TYPE)
 
@@ -258,17 +308,36 @@ def search_feed():
 
 @bp.get("/books/<int:book_id>")
 def book_feed(book_id: int):
+    return _book_feed(book_id, None)
+
+
+@bp.get("/x3/books/<int:book_id>")
+def x3_book_feed(book_id: int):
+    return _book_feed(book_id, "x3")
+
+
+@bp.get("/x4/books/<int:book_id>")
+def x4_book_feed(book_id: int):
+    return _book_feed(book_id, "x4")
+
+
+def _book_feed(book_id: int, profile: str | None):
     with session_scope() as session:
         book = session.get(Book, book_id)
         if book is None:
             abort(404)
         title = book.title or book.relative_path
         updated = book.updated_at or book.created_at
+        prefix = f"{profile.upper()} — " if profile else ""
+        endpoint = (
+            f"opds.{profile}_book_feed" if profile else "opds.book_feed"
+        )
         data = acquisition_feed(
-            title=f"BookFlow — {title}",
+            title=f"BookFlow — {prefix}{title}",
             updated=updated,
-            self_href=url_for("opds.book_feed", book_id=book_id),
+            self_href=url_for(endpoint, book_id=book_id),
             books=[book],
+            profile=profile,
         )
     return Response(data, content_type=ACQUISITION_TYPE)
 
