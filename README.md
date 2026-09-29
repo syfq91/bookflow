@@ -148,7 +148,9 @@ docker compose up -d --build
 `.env` is optional — without it the server starts with its defaults: the
 session secret is auto-generated into the data volume, and everything works
 except OPDS/login stay locked (`503`) until you set `OPDS_ADMIN_PASSWORD`.
-Every `OPDS_*` value from `.env` is passed into the container.
+The settings mapped in `docker-compose.yml`'s `environment` block are read
+from `.env` and passed to the container; empty values fall back to the app
+defaults.
 
 - The library is bind-mounted **read-only** at `/library`
   (`LIBRARY_DIR`, default `./library`). Register `/library` — the
