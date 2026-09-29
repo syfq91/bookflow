@@ -3,7 +3,8 @@
 A small, self-hosted OPDS server: read-only filesystem → searchable index → OPDS catalog,
 with on-demand EPUB optimization and single-user reading progression.
 
-See [plan.md](plan.md) for the full implementation plan.
+See [plan.md](plan.md) for the full implementation plan and
+[ARCHITECTURE.md](ARCHITECTURE.md) for how the code is organized.
 
 ## Requirements
 
