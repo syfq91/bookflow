@@ -140,24 +140,32 @@ Mount library directories read-only; only the data directory needs write access.
 ## Docker
 
 ```bash
-cp .env.example .env    # optional; at least set OPDS_ADMIN_PASSWORD to log in
-# set LIBRARY_DIR=/path/to/your/library in .env
 docker compose up -d --build
 ```
 
-`.env` is optional — without it the server starts with its defaults: the
-session secret is auto-generated into the data volume, and everything works
-except OPDS/login stay locked (`503`) until you set `OPDS_ADMIN_PASSWORD`.
-The settings mapped in `docker-compose.yml`'s `environment` block are read
-from `.env` and passed to the container; empty values fall back to the app
-defaults.
+Configuration lives in `docker-compose.yml` itself — no `.env` step, no
+`${...}` interpolation. Before the first start, set `OPDS_ADMIN_PASSWORD`
+(otherwise OPDS returns `503` and admin login is locked) and point the
+library bind at your books:
 
-- The library is bind-mounted **read-only** at `/library`
-  (`LIBRARY_DIR`, default `./library`). Register `/library` — the
-  *container* path — under **Folders** after first login; host paths are
-  not visible inside the container.
+```yaml
+environment:
+  OPDS_ADMIN_PASSWORD: change-me
+volumes:
+  - bookflow-data:/app/data
+  - /srv/books:/library:ro
+```
+
+Every other setting is commented out in `docker-compose.yml` and falls back
+to the app defaults: the session secret is generated into the data volume on
+first start, the scan extensions and worker count use their defaults.
+`.env.example` documents the same variables for a bare-metal install.
+
+- The library is bind-mounted **read-only** at `/library` (default host path
+  `./library`). Register `/library` — the *container* path — under **Folders**
+  after first login; host paths are not visible inside the container.
 - SQLite and the optimization cache live in the `bookflow-data` named
   volume; migrations run automatically at container start.
-- The server binds `127.0.0.1:8000` by default. Set `BOOKFLOW_BIND=0.0.0.0`
-  to expose it on your LAN and `BOOKFLOW_PORT` to change the host port.
+- The published port is `127.0.0.1:8000`; change the `ports:` entry to
+  `0.0.0.0:8000:8000` to expose it on your LAN, or change the host port.
 - `/healthz` drives the compose healthcheck.

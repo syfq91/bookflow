@@ -5,24 +5,27 @@ services:
     build: .
     image: bookflow:latest
     container_name: bookflow
+    # Host bind/port: localhost only. Use "0.0.0.0:8000:8000" for LAN.
     ports:
-      - "${BOOKFLOW_BIND:-127.0.0.1}:${BOOKFLOW_PORT:-8000}:8000"
-    # .env (or the shell) feeds these via ${...} interpolation; an empty
-    # value means "unset" and the app default applies (see .env.example).
-    # Without a .env file everything runs on defaults; ./data resolves to
-    # /app/data, which is the named volume.
+      - "127.0.0.1:8000:8000"
+      # - "0.0.0.0:8000:8000"
+    # Values are literal, so compose no longer reads .env for ${...}
+    # interpolation — edit them here. Commented lines use the app
+    # defaults (see .env.example and README.md).
     environment:
-      OPDS_DATA_DIR: ${OPDS_DATA_DIR:-}
-      OPDS_DATABASE_URL: ${OPDS_DATABASE_URL:-}
-      OPDS_ADMIN_USERNAME: ${OPDS_ADMIN_USERNAME:-}
-      OPDS_ADMIN_PASSWORD: ${OPDS_ADMIN_PASSWORD:-}
-      OPDS_SESSION_SECRET: ${OPDS_SESSION_SECRET:-}
-      OPDS_SESSION_COOKIE_SECURE: ${OPDS_SESSION_COOKIE_SECURE:-}
-      OPDS_SCAN_EXTENSIONS: ${OPDS_SCAN_EXTENSIONS:-}
-      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-}
+      # Required: without it OPDS returns 503 and admin login is locked.
+      OPDS_ADMIN_PASSWORD: change-me
+      # OPDS_ADMIN_USERNAME: admin
+      # OPDS_DATA_DIR: ./data            # /app/data is the named volume
+      # OPDS_DATABASE_URL: sqlite+pysqlite:////app/data/bookflow.db
+      # OPDS_SESSION_SECRET: change-me   # empty → generated on first start
+      # OPDS_SESSION_COOKIE_SECURE: "false"   # "true" behind HTTPS
+      # OPDS_SCAN_EXTENSIONS: .epub,.pdf,.cbz,.cbr,.mobi,.azw3
+      # GUNICORN_WORKERS: "2"
     volumes:
       - bookflow-data:/app/data
-      - ${LIBRARY_DIR:-./library}:/library:ro
+      - ./library:/library:ro
+      # - /srv/books:/library:ro
     restart: unless-stopped
     healthcheck:
       test:
