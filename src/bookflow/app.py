@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from flask import Flask, jsonify
 
+from bookflow.admin.routes import bp as admin_bp
+from bookflow.auth.routes import bp as auth_bp
+from bookflow.auth.service import LoginRateLimiter, PasswordVerifier, ensure_csrf_token
 from bookflow.config import Settings
 from bookflow.database.database import init_engine
 
@@ -16,9 +19,24 @@ def create_app(settings: Settings | None = None) -> Flask:
     app = Flask(__name__)
     app.config["SETTINGS"] = settings
     app.secret_key = settings.session_secret or "dev-only-insecure-secret"
+    app.config.update(
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        SESSION_COOKIE_SECURE=settings.session_cookie_secure,
+        MAX_CONTENT_LENGTH=1024 * 1024,
+    )
 
     settings.ensure_directories()
     init_engine(settings)
+
+    app.extensions["password_verifier"] = PasswordVerifier(
+        settings.admin_username, settings.admin_password
+    )
+    app.extensions["login_rate_limiter"] = LoginRateLimiter()
+    app.jinja_env.globals["csrf_token"] = ensure_csrf_token
+
+    app.register_blueprint(auth_bp)
+    app.register_blueprint(admin_bp)
 
     @app.get("/healthz")
     def healthz():

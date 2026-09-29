@@ -29,6 +29,13 @@ All settings come from environment variables (defaults in parentheses):
 | `OPDS_SESSION_SECRET`    | *(dev key)* | Flask session secret                 |
 | `OPDS_ADMIN_USERNAME`    | `admin`     | Admin username                       |
 | `OPDS_ADMIN_PASSWORD`    | *(empty)*   | Admin password                       |
+| `OPDS_SESSION_COOKIE_SECURE` | `false` | Set the session cookie `Secure` flag (enable behind HTTPS) |
+
+## Admin UI
+
+Set `OPDS_ADMIN_PASSWORD` and open `/admin/login`. Admin routes require a
+session; OPDS routes (added in later milestones) use HTTP Basic Auth with the
+same credentials. Without `OPDS_ADMIN_PASSWORD` the login form returns `503`.
 
 ## Development
 

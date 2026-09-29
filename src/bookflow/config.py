@@ -14,6 +14,13 @@ def _env(name: str, default: str) -> str:
     return value
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.environ.get(name)
+    if value is None or value == "":
+        return default
+    return value.strip().lower() in ("1", "true", "yes", "on")
+
+
 @dataclass(frozen=True)
 class Settings:
     """Resolved application settings."""
@@ -25,6 +32,7 @@ class Settings:
     session_secret: str
     admin_username: str
     admin_password: str
+    session_cookie_secure: bool = False
 
     @property
     def cache_dir(self) -> Path:
@@ -54,6 +62,7 @@ class Settings:
             session_secret=_env("OPDS_SESSION_SECRET", ""),
             admin_username=_env("OPDS_ADMIN_USERNAME", "admin"),
             admin_password=_env("OPDS_ADMIN_PASSWORD", ""),
+            session_cookie_secure=_env_bool("OPDS_SESSION_COOKIE_SECURE", False),
         )
 
     def ensure_directories(self) -> None:

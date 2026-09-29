@@ -1,1 +1,58 @@
-<!-- dashboard.html -->
+{% extends "layout.html" %}
+
+{% block title %}Dashboard · BookFlow{% endblock %}
+
+{% block content %}
+<h1>Dashboard</h1>
+
+{% if stats.db_error %}
+<p class="error" role="alert">{{ stats.db_error }}</p>
+{% endif %}
+
+<div class="grid">
+  <div class="card stat">
+    <span class="label">Books</span>
+    <span class="value">{{ stats.books }}</span>
+  </div>
+  <div class="card stat">
+    <span class="label">Folders</span>
+    <span class="value">{{ stats.folders }}</span>
+  </div>
+  <div class="card stat">
+    <span class="label">Library size</span>
+    <span class="value">{{ stats.total_size|filesizeformat }}</span>
+  </div>
+</div>
+
+<section class="card">
+  <h2>Last scan</h2>
+  <dl class="detail">
+    <dt>Status</dt>
+    <dd>
+      {% if stats.scan_errors %}
+      <span class="badge badge-error">{{ stats.scan_errors }} folder(s) in
+        error</span>
+      {% else %}
+      <span class="badge badge-ok">OK</span>
+      {% endif %}
+    </dd>
+    <dt>Completed</dt>
+    <dd>
+      {{ stats.last_scan.strftime('%Y-%m-%d %H:%M') if stats.last_scan else 'never' }}
+    </dd>
+  </dl>
+</section>
+
+<div class="grid">
+  <section class="card">
+    <h2>Optimization cache</h2>
+    <p class="muted">X3/X4 cache sizes arrive in Milestone 8.</p>
+  </section>
+  <section class="card">
+    <h2>Health</h2>
+    <p class="muted">
+      Database, library, OPDS and epubkit checks arrive in Milestone 8.
+    </p>
+  </section>
+</div>
+{% endblock %}
