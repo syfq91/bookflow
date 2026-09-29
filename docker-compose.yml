@@ -8,13 +8,11 @@ services:
     ports:
       - "${BOOKFLOW_BIND:-127.0.0.1}:${BOOKFLOW_PORT:-8000}:8000"
     # Optional: forwards every OPDS_* / GUNICORN_WORKERS value from .env.
-    # Without a .env file the app's own defaults apply (see .env.example).
+    # Without a .env file the app's own defaults apply (see .env.example);
+    # the default data dir ./data resolves to /app/data (the named volume).
     env_file:
       - path: .env
         required: false
-    environment:
-      # Data always lives in the named volume, whatever .env says.
-      OPDS_DATA_DIR: /app/data
     volumes:
       - bookflow-data:/app/data
       - ${LIBRARY_DIR:-./library}:/library:ro
