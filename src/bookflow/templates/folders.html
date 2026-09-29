@@ -3,10 +3,71 @@
 {% block title %}Folders · BookFlow{% endblock %}
 
 {% block content %}
-<h1>Library Folders</h1>
+<div class="page-head">
+  <h1>Library Folders</h1>
+  <a class="button" href="{{ url_for('admin.folder_new') }}">Add Folder</a>
+</div>
+
+{% if not folders %}
 <section class="card">
   <p class="muted">
-    Adding, removing and scanning library folders arrives in Milestone 3.
+    No library folders yet. Add one to start indexing ebooks.
   </p>
 </section>
+{% endif %}
+
+{% for folder in folders %}
+<section class="card">
+  <div class="folder-head">
+    <div>
+      <h2>{{ folder.name }}</h2>
+      <p class="path">{{ folder.path }}</p>
+    </div>
+    <div class="folder-actions">
+      <form
+        method="post"
+        action="{{ url_for('admin.folder_scan', folder_id=folder.id) }}"
+      >
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        <button type="submit">Scan</button>
+      </form>
+      <form
+        method="post"
+        action="{{ url_for('admin.folder_delete', folder_id=folder.id) }}"
+        class="inline danger"
+        onsubmit="return confirm('Remove {{ folder.path }} from BookFlow? Library files are not deleted.');"
+      >
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        <button type="submit" class="secondary">Remove</button>
+      </form>
+    </div>
+  </div>
+
+  <dl class="detail">
+    <dt>Books</dt>
+    <dd>{{ folder.books }}</dd>
+    <dt>Size</dt>
+    <dd>{{ folder.size|filesizeformat }}</dd>
+    <dt>Last scan</dt>
+    <dd>
+      {% if folder.last_scan_at %}
+      {{ folder.last_scan_at.strftime('%Y-%m-%d %H:%M') }}
+      &middot; {{ '%.1f'|format(folder.last_scan_duration or 0) }}s
+      {% else %}
+      never
+      {% endif %}
+      {% if folder.last_scan_status %}
+      <span
+        class="badge {{ 'badge-ok' if folder.last_scan_status == 'ok' else 'badge-error' }}"
+        >{{ folder.last_scan_status }}</span
+      >
+      {% endif %}
+    </dd>
+  </dl>
+
+  {% if folder.last_scan_error %}
+  <p class="error">{{ folder.last_scan_error }}</p>
+  {% endif %}
+</section>
+{% endfor %}
 {% endblock %}

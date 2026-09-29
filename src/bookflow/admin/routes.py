@@ -1,16 +1,143 @@
-"""Admin dashboard and placeholder pages."""
+"""Admin dashboard, library folder management, and health pages."""
 
 from __future__ import annotations
 
-from flask import Blueprint, render_template
+from flask import (
+    Blueprint,
+    abort,
+    current_app,
+    flash,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
 from sqlalchemy import func, select
 from sqlalchemy.exc import OperationalError
 
 from bookflow.auth.decorators import login_required
+from bookflow.auth.service import validate_csrf
 from bookflow.database.database import session_scope
 from bookflow.database.models import Book, LibraryFolder
+from bookflow.library.scanner import ScanInProgress, ScanResult, scan_folder
+from bookflow.library.service import (
+    add_folder,
+    get_folder,
+    list_folders,
+    remove_folder,
+)
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
+
+_WRITE_METHODS = ("POST", "PUT", "PATCH", "DELETE")
+
+
+@bp.before_request
+def _require_csrf_for_writes():
+    """Every state-changing admin request must carry a valid CSRF token."""
+    if request.method in _WRITE_METHODS and not validate_csrf():
+        abort(400, description="Invalid or missing CSRF token")
+
+
+@bp.get("/")
+@login_required
+def dashboard():
+    return render_template("dashboard.html", stats=_dashboard_stats())
+
+
+@bp.get("/folders")
+@login_required
+def folders():
+    return _folders_response()
+
+
+@bp.get("/folders/new")
+@login_required
+def folder_new():
+    return render_template("add_folder.html", path="", error=None)
+
+
+@bp.post("/folders")
+@login_required
+def folder_create():
+    raw = request.form.get("path", "")
+    result = add_folder(raw)
+    if not result.ok:
+        return render_template("add_folder.html", path=raw, error=result.error), 400
+    busy = _run_scan(result.folder_id, result.path)
+    if busy:
+        flash(busy, "error")
+        return _folders_response(), 409
+    return redirect(url_for("admin.folders"))
+
+
+@bp.post("/folders/<int:folder_id>/scan")
+@login_required
+def folder_scan(folder_id: int):
+    folder = get_folder(folder_id)
+    if folder is None:
+        abort(404)
+    extensions = current_app.config["SETTINGS"].scan_extensions
+    try:
+        result = scan_folder(folder_id, extensions)
+    except ScanInProgress:
+        flash("A scan for this folder is already in progress.", "error")
+        return _folders_response(), 409
+    flash(
+        _scan_message(folder["path"], result),
+        "ok" if result.status == "ok" else "error",
+    )
+    return redirect(url_for("admin.folders"))
+
+
+@bp.post("/folders/<int:folder_id>/delete")
+@login_required
+def folder_delete(folder_id: int):
+    folder = get_folder(folder_id)
+    if folder is None:
+        abort(404)
+    remove_folder(folder_id)
+    flash(
+        f"Removed {folder['path']} from BookFlow. Library files were not changed.",
+        "ok",
+    )
+    return redirect(url_for("admin.folders"))
+
+
+@bp.get("/health")
+@login_required
+def health():
+    return render_template("health.html")
+
+
+def _folders_response():
+    return render_template("folders.html", folders=list_folders())
+
+
+def _run_scan(folder_id: int | None, path: str | None) -> str | None:
+    """Scan a folder and flash the result; return a message when busy."""
+    if folder_id is None or path is None:
+        return "Folder could not be scanned."
+    extensions = current_app.config["SETTINGS"].scan_extensions
+    try:
+        result = scan_folder(folder_id, extensions)
+    except ScanInProgress:
+        return f"Registered {path}; a scan is already running."
+    flash(
+        _scan_message(path, result),
+        "ok" if result.status == "ok" else "error",
+    )
+    return None
+
+
+def _scan_message(path: str, result: ScanResult) -> str:
+    message = (
+        f"Scanned {path}: {result.added} added, {result.updated} updated, "
+        f"{result.removed} removed, {result.unchanged} unchanged"
+    )
+    if result.errors:
+        message += f", {len(result.errors)} error(s)"
+    return f"{message} in {result.duration:.1f}s"
 
 
 def _dashboard_stats() -> dict[str, object]:
@@ -37,7 +164,7 @@ def _query_stats() -> dict[str, object]:
         scan_errors = (
             session.scalar(
                 select(func.count(LibraryFolder.id)).where(
-                    LibraryFolder.last_scan_status == "error"
+                    LibraryFolder.last_scan_status.notin_(["ok"])
                 )
             )
             or 0
@@ -50,21 +177,3 @@ def _query_stats() -> dict[str, object]:
         "last_scan": last_scan,
         "scan_errors": int(scan_errors),
     }
-
-
-@bp.get("/")
-@login_required
-def dashboard():
-    return render_template("dashboard.html", stats=_dashboard_stats())
-
-
-@bp.get("/folders")
-@login_required
-def folders():
-    return render_template("folders.html")
-
-
-@bp.get("/health")
-@login_required
-def health():
-    return render_template("health.html")

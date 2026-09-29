@@ -222,3 +222,95 @@ button[type="submit"]:hover {
   color: var(--muted);
   margin: 0;
 }
+
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+a.button {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  text-decoration: none;
+  font-size: 0.95rem;
+}
+
+a.button:hover {
+  background: var(--accent-dark);
+}
+
+.folder-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.folder-head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.path {
+  margin: 0.15rem 0 0;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9rem;
+  word-break: break-all;
+}
+
+.folder-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.folder-actions form {
+  margin: 0;
+}
+
+.folder-actions button {
+  margin-top: 0;
+  padding: 0.35rem 0.85rem;
+}
+
+button.secondary {
+  background: var(--surface);
+  color: var(--error);
+  border: 1px solid var(--border);
+}
+
+button.secondary:hover {
+  background: #fdeceb;
+  border-color: var(--error);
+}
+
+.form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.form-actions a {
+  color: var(--muted);
+}
+
+.flash-ok {
+  background: #e6f4ec;
+  border-color: #bfe3d0;
+  color: var(--ok);
+}
+
+.flash-error {
+  background: #fdeceb;
+  border-color: #f7c9c5;
+  color: var(--error);
+}

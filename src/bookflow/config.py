@@ -21,6 +21,25 @@ def _env_bool(name: str, default: bool) -> bool:
     return value.strip().lower() in ("1", "true", "yes", "on")
 
 
+DEFAULT_SCAN_EXTENSIONS = (".epub", ".pdf", ".cbz", ".cbr", ".mobi", ".azw3")
+
+
+def _parse_extensions(value: str) -> tuple[str, ...]:
+    """Parse a comma-separated extension list, normalized to `.ext`."""
+    if not value.strip():
+        return DEFAULT_SCAN_EXTENSIONS
+    extensions: list[str] = []
+    for part in value.split(","):
+        item = part.strip().lower()
+        if not item:
+            continue
+        if not item.startswith("."):
+            item = "." + item
+        extensions.append(item)
+    unique = tuple(dict.fromkeys(extensions))
+    return unique or DEFAULT_SCAN_EXTENSIONS
+
+
 @dataclass(frozen=True)
 class Settings:
     """Resolved application settings."""
@@ -33,6 +52,7 @@ class Settings:
     admin_username: str
     admin_password: str
     session_cookie_secure: bool = False
+    scan_extensions: tuple[str, ...] = DEFAULT_SCAN_EXTENSIONS
 
     @property
     def cache_dir(self) -> Path:
@@ -63,6 +83,9 @@ class Settings:
             admin_username=_env("OPDS_ADMIN_USERNAME", "admin"),
             admin_password=_env("OPDS_ADMIN_PASSWORD", ""),
             session_cookie_secure=_env_bool("OPDS_SESSION_COOKIE_SECURE", False),
+            scan_extensions=_parse_extensions(
+                _env("OPDS_SCAN_EXTENSIONS", "")
+            ),
         )
 
     def ensure_directories(self) -> None:

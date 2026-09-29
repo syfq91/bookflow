@@ -46,7 +46,9 @@ class LibraryFolder(Base):
     last_scan_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     last_scan_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    books: Mapped[list[Book]] = relationship(back_populates="folder")
+    books: Mapped[list[Book]] = relationship(
+        back_populates="folder", cascade="all, delete-orphan"
+    )
 
 
 class Book(Base):

@@ -1,1 +1,33 @@
-<!-- add_folder.html -->
+{% extends "layout.html" %}
+
+{% block title %}Add folder · BookFlow{% endblock %}
+
+{% block content %}
+<section class="card narrow">
+  <h1>Add library folder</h1>
+  <p class="muted">
+    BookFlow only reads from the folder. Nothing is uploaded, moved or
+    modified.
+  </p>
+  {% if error %}
+  <p class="error" role="alert">{{ error }}</p>
+  {% endif %}
+  <form method="post" action="{{ url_for('admin.folder_create') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+    <label for="path">Folder path</label>
+    <input
+      id="path"
+      name="path"
+      type="text"
+      value="{{ path }}"
+      placeholder="/media/books"
+      required
+      autofocus
+    />
+    <div class="form-actions">
+      <a href="{{ url_for('admin.folders') }}">Cancel</a>
+      <button type="submit">Add Folder</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

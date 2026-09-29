@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
 from bookflow.config import Settings
@@ -14,12 +14,24 @@ _engine: Engine | None = None
 _session_factory: sessionmaker[Session] | None = None
 
 
+def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record) -> None:
+    """Enforce ON DELETE CASCADE declared in the schema."""
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("PRAGMA foreign_keys=ON")
+    finally:
+        cursor.close()
+
+
 def get_engine(settings: Settings) -> Engine:
     """Create an engine for the configured database URL."""
     connect_args: dict[str, object] = {}
     if settings.database_url.startswith("sqlite"):
         connect_args["check_same_thread"] = False
-    return create_engine(settings.database_url, connect_args=connect_args)
+    engine = create_engine(settings.database_url, connect_args=connect_args)
+    if engine.dialect.name == "sqlite":
+        event.listen(engine, "connect", _enable_sqlite_foreign_keys)
+    return engine
 
 
 def init_engine(settings: Settings) -> Engine:
