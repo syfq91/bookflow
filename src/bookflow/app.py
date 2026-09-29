@@ -7,7 +7,7 @@ from flask import Flask, jsonify
 from bookflow.admin.routes import bp as admin_bp
 from bookflow.auth.routes import bp as auth_bp
 from bookflow.auth.service import LoginRateLimiter, PasswordVerifier, ensure_csrf_token
-from bookflow.config import Settings
+from bookflow.config import Settings, resolve_session_secret
 from bookflow.database.database import init_engine
 from bookflow.opds.progression import bp as progression_bp
 from bookflow.opds.routes import bp as opds_bp
@@ -20,7 +20,6 @@ def create_app(settings: Settings | None = None) -> Flask:
 
     app = Flask(__name__)
     app.config["SETTINGS"] = settings
-    app.secret_key = settings.session_secret or "dev-only-insecure-secret"
     app.config.update(
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
@@ -29,6 +28,7 @@ def create_app(settings: Settings | None = None) -> Flask:
     )
 
     settings.ensure_directories()
+    app.secret_key = resolve_session_secret(settings)
     init_engine(settings)
 
     app.extensions["password_verifier"] = PasswordVerifier(

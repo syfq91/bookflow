@@ -123,8 +123,11 @@ epubkit integration is a package `optimizer/epubkit/` rather than a single
 `src/bookflow/app.py` — factory pattern, one function:
 
 1. `Settings.from_env()` (or the settings passed in by tests).
-2. Flask config: secret key, `HttpOnly` + `SameSite=Lax` cookies, `Secure`
-   from `OPDS_SESSION_COOKIE_SECURE`, `MAX_CONTENT_LENGTH` = 1 MB.
+2. Flask config: secret key (`OPDS_SESSION_SECRET`, otherwise a random one
+   generated once and persisted to `data/.session_secret` so restarts and
+   gunicorn workers keep sessions valid), `HttpOnly` + `SameSite=Lax`
+   cookies, `Secure` from `OPDS_SESSION_COOKIE_SECURE`, `MAX_CONTENT_LENGTH`
+   = 1 MB.
 3. `settings.ensure_directories()` — create `data/` and the x3/x4 cache dirs.
 4. `init_engine(settings)` — process-wide SQLAlchemy engine.
 5. Extensions (kept on `app.extensions`, not globals):
@@ -148,7 +151,7 @@ environment variable with a default (see `.env.example`):
 | `OPDS_HOST` / `OPDS_PORT` | `0.0.0.0` / `8000` | bind address |
 | `OPDS_DATA_DIR` | `./data` | SQLite + cache root (only writable dir) |
 | `OPDS_DATABASE_URL` | derived from data dir | override for tests/production |
-| `OPDS_SESSION_SECRET` | *(dev fallback key)* | set in production |
+| `OPDS_SESSION_SECRET` | *(auto-generated)* | unset → random secret persisted to `data/.session_secret` (0600), shared by all workers |
 | `OPDS_ADMIN_USERNAME` / `OPDS_ADMIN_PASSWORD` | `admin` / *(empty)* | empty password → OPDS returns `503` |
 | `OPDS_SESSION_COOKIE_SECURE` | `false` | enable behind HTTPS |
 | `OPDS_SCAN_EXTENSIONS` | `.epub,.pdf,.cbz,.cbr,.mobi,.azw3` | scanner scope |

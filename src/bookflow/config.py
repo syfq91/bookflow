@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -92,3 +93,42 @@ class Settings:
         """Create the data and cache directories if they do not exist."""
         for path in (self.data_dir, self.x3_cache_dir, self.x4_cache_dir):
             path.mkdir(parents=True, exist_ok=True)
+
+
+def resolve_session_secret(settings: Settings) -> str:
+    """Return the configured session secret, generating one when absent.
+
+    Without ``OPDS_SESSION_SECRET`` a random secret is created once and
+    persisted to ``data/.session_secret`` (mode 0600), so sessions survive
+    restarts and every gunicorn worker signs cookies with the same key.
+    If the data directory is not writable, an in-memory secret is used and
+    sessions reset on the next restart.
+    """
+    if settings.session_secret:
+        return settings.session_secret
+
+    path = settings.data_dir / ".session_secret"
+    for _attempt in range(3):
+        try:
+            stored = path.read_text(encoding="ascii").strip()
+            if stored:
+                return stored
+        except FileNotFoundError:
+            pass
+        except OSError:
+            break
+        secret = secrets.token_urlsafe(32)
+        try:
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            continue  # another worker won the race; re-read its value
+        except OSError:
+            return secret  # data dir not writable: keep it in memory
+        try:
+            with os.fdopen(fd, "w", encoding="ascii") as handle:
+                handle.write(secret)
+        except OSError:
+            path.unlink(missing_ok=True)
+            return secret
+        return secret
+    return secrets.token_urlsafe(32)

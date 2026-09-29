@@ -126,8 +126,10 @@ pkill -f "[f]lask --app bookflow.app run"
   escaping helper if you touch queries.
 - Flask's default error pages are intentional for `/admin`; only the OPDS
   and progression blueprints render structured errors.
-- The session secret falls back to a dev-only literal; production must set
-  `OPDS_SESSION_SECRET` (documented in `.env.example`).
+- The session secret is auto-generated and persisted to
+  `data/.session_secret` when `OPDS_SESSION_SECRET` is unset (see
+  `resolve_session_secret()`); the old shared dev literal no longer exists.
+  Never log the file's contents.
 
 ## Git
 

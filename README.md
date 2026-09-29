@@ -27,7 +27,7 @@ All settings come from environment variables (defaults in parentheses):
 | `OPDS_PORT`                 | `8000`      | Bind port                                          |
 | `OPDS_DATA_DIR`             | `./data`    | Data directory (SQLite + cache)                    |
 | `OPDS_DATABASE_URL`         | derived     | Override the SQLAlchemy database URL               |
-| `OPDS_SESSION_SECRET`       | *(dev key)* | Flask session secret                               |
+| `OPDS_SESSION_SECRET`       | *(generated)* | Session secret; when unset, random and persisted to `data/.session_secret` |
 | `OPDS_ADMIN_USERNAME`       | `admin`     | Admin username                                     |
 | `OPDS_ADMIN_PASSWORD`       | *(empty)*   | Admin password                                     |
 | `OPDS_SESSION_COOKIE_SECURE` | `false`    | Set the session cookie `Secure` flag (behind HTTPS) |
@@ -139,7 +139,7 @@ Mount library directories read-only; only the data directory needs write access.
 ## Docker
 
 ```bash
-cp .env.example .env    # set OPDS_ADMIN_PASSWORD and OPDS_SESSION_SECRET
+cp .env.example .env    # set OPDS_ADMIN_PASSWORD (session secret is auto-generated)
 # set LIBRARY_DIR=/path/to/your/library in .env
 docker compose up -d --build
 ```
