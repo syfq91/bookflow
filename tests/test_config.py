@@ -1,0 +1,69 @@
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+from bookflow.config import Settings
+
+
+def test_defaults(monkeypatch, tmp_path: Path) -> None:
+    for key in list(os.environ):
+        if key.startswith("OPDS_"):
+            monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("OPDS_DATA_DIR", str(tmp_path / "data"))
+
+    settings = Settings.from_env()
+
+    assert settings.host == "0.0.0.0"
+    assert settings.port == 8000
+    assert settings.admin_username == "admin"
+    assert settings.data_dir == (tmp_path / "data").resolve()
+    assert settings.database_url.endswith("bookflow.db")
+
+
+def test_env_overrides(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("OPDS_HOST", "127.0.0.1")
+    monkeypatch.setenv("OPDS_PORT", "9000")
+    monkeypatch.setenv("OPDS_DATA_DIR", str(tmp_path / "d"))
+    monkeypatch.setenv("OPDS_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'x.db'}")
+    monkeypatch.setenv("OPDS_ADMIN_USERNAME", "root")
+
+    settings = Settings.from_env()
+
+    assert settings.host == "127.0.0.1"
+    assert settings.port == 9000
+    assert settings.admin_username == "root"
+    assert settings.database_url == f"sqlite+pysqlite:///{tmp_path / 'x.db'}"
+
+
+def test_derived_cache_paths(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    settings = Settings(
+        host="0.0.0.0",
+        port=8000,
+        data_dir=data_dir,
+        database_url="sqlite://",
+        session_secret="",
+        admin_username="admin",
+        admin_password="",
+    )
+
+    assert settings.x3_cache_dir == data_dir / "cache" / "optimized" / "x3"
+    assert settings.x4_cache_dir == data_dir / "cache" / "optimized" / "x4"
+
+
+def test_ensure_directories(tmp_path: Path) -> None:
+    settings = Settings(
+        host="0.0.0.0",
+        port=8000,
+        data_dir=tmp_path / "data",
+        database_url="sqlite://",
+        session_secret="",
+        admin_username="admin",
+        admin_password="",
+    )
+
+    settings.ensure_directories()
+
+    assert settings.x3_cache_dir.is_dir()
+    assert settings.x4_cache_dir.is_dir()
