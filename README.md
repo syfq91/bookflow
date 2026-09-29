@@ -135,3 +135,21 @@ uv run gunicorn --bind 0.0.0.0:8000 bookflow.app:app
 ```
 
 Mount library directories read-only; only the data directory needs write access.
+
+## Docker
+
+```bash
+cp .env.example .env    # set OPDS_ADMIN_PASSWORD and OPDS_SESSION_SECRET
+# set LIBRARY_DIR=/path/to/your/library in .env
+docker compose up -d --build
+```
+
+- The library is bind-mounted **read-only** at `/library`
+  (`LIBRARY_DIR`, default `./library`). Register `/library` — the
+  *container* path — under **Folders** after first login; host paths are
+  not visible inside the container.
+- SQLite and the optimization cache live in the `bookflow-data` named
+  volume; migrations run automatically at container start.
+- The server binds `127.0.0.1:8000` by default. Set `BOOKFLOW_BIND=0.0.0.0`
+  to expose it on your LAN and `BOOKFLOW_PORT` to change the host port.
+- `/healthz` drives the compose healthcheck.

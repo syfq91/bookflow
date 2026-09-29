@@ -23,6 +23,7 @@ uv run flask --app bookflow.app run       # dev server on :8000
 uv run alembic upgrade head               # apply migrations
 uv run alembic revision --autogenerate -m "..."
 uv run gunicorn --bind 0.0.0.0:8000 bookflow.app:app
+docker compose up -d --build          # containerized run (Dockerfile)
 ```
 
 Verify before committing: `uv run ruff check . && uv run pytest -q`.

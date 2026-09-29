@@ -1,0 +1,36 @@
+name: bookflow
+
+services:
+  bookflow:
+    build: .
+    image: bookflow:latest
+    container_name: bookflow
+    ports:
+      - "${BOOKFLOW_BIND:-127.0.0.1}:${BOOKFLOW_PORT:-8000}:8000"
+    environment:
+      OPDS_DATA_DIR: /app/data
+      OPDS_ADMIN_USERNAME: ${OPDS_ADMIN_USERNAME:-admin}
+      OPDS_ADMIN_PASSWORD: ${OPDS_ADMIN_PASSWORD:-}
+      OPDS_SESSION_SECRET: ${OPDS_SESSION_SECRET:-}
+      OPDS_SESSION_COOKIE_SECURE: ${OPDS_SESSION_COOKIE_SECURE:-false}
+      OPDS_SCAN_EXTENSIONS: ${OPDS_SCAN_EXTENSIONS:-.epub,.pdf,.cbz,.cbr,.mobi,.azw3}
+      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-2}
+    volumes:
+      - bookflow-data:/app/data
+      - ${LIBRARY_DIR:-./library}:/library:ro
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python3",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=4)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  bookflow-data:

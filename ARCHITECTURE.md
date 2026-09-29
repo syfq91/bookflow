@@ -465,3 +465,9 @@ Mount library directories **read-only**; only `data/` (SQLite + cache)
 needs write access. The cache directory is disposable: clearing it (UI
 button or `rm -rf`) costs only regeneration time on the next device
 download.
+
+For containers, `Dockerfile` + `docker-compose.yml` run the same stack:
+two-stage build (uv sync → slim runtime, non-root user), a read-only
+`LIBRARY_DIR` bind mount at `/library`, a named volume for `/app/data`,
+automatic `alembic upgrade head` at start, and a `/healthz`
+healthcheck.
