@@ -37,7 +37,8 @@ All settings come from environment variables (defaults in parentheses):
 
 Set `OPDS_ADMIN_PASSWORD` and open `/admin/login`. Admin routes require a
 session; the OPDS routes use HTTP Basic Auth with the same credentials.
-Without `OPDS_ADMIN_PASSWORD` the login form and the OPDS catalog return `503`.
+Without `OPDS_ADMIN_PASSWORD` login attempts and the OPDS catalog return
+`503` (the login form itself still renders).
 
 The dashboard shows books, folders, library size, last scan, optimization
 cache sizes and health badges. `/admin/health` runs per-component checks
@@ -139,10 +140,15 @@ Mount library directories read-only; only the data directory needs write access.
 ## Docker
 
 ```bash
-cp .env.example .env    # set OPDS_ADMIN_PASSWORD (session secret is auto-generated)
+cp .env.example .env    # optional; at least set OPDS_ADMIN_PASSWORD to log in
 # set LIBRARY_DIR=/path/to/your/library in .env
 docker compose up -d --build
 ```
+
+`.env` is optional — without it the server starts with its defaults: the
+session secret is auto-generated into the data volume, and everything works
+except OPDS/login stay locked (`503`) until you set `OPDS_ADMIN_PASSWORD`.
+Every `OPDS_*` value from `.env` is passed into the container.
 
 - The library is bind-mounted **read-only** at `/library`
   (`LIBRARY_DIR`, default `./library`). Register `/library` — the
