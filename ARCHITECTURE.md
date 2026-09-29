@@ -3,7 +3,6 @@
 How BookFlow is put together: layered design, module responsibilities,
 request flows, and the invariants every change must preserve.
 
-- Implementation plan: [plan.md](plan.md)
 - Usage and endpoints: [README.md](README.md)
 
 ## 1. Overview
@@ -68,7 +67,7 @@ No FastAPI, no Redis, no Celery, no second HTTP service.
 bookflow/
 ├── pyproject.toml / uv.lock      deps, ruff + pytest config
 ├── alembic.ini / migrations/     schema migrations (0001_initial_schema)
-├── plan.md / README.md / ARCHITECTURE.md
+├── README.md / ARCHITECTURE.md / AGENTS.md
 ├── .env.example                  documented OPDS_* variables
 │
 ├── src/bookflow/
@@ -113,7 +112,7 @@ bookflow/
 └── tests/                        193 tests (see §11)
 ```
 
-Deliberate deviations from the layout sketched in `plan.md`: every ORM model
+Deliberate deviations from the originally sketched layout: every ORM model
 lives in `database/models.py` (there is no `library/models.py`), and the
 epubkit integration is a package `optimizer/epubkit/` rather than a single
 `epubkit.py` module.

@@ -9,7 +9,6 @@ optional items); expect maintenance, bug fixes, and small features rather
 than greenfield work.
 
 - **How it fits together:** [ARCHITECTURE.md](ARCHITECTURE.md) (start here)
-- **What was intended:** [plan.md](plan.md) (spec; §33 lists non-goals)
 - **How to run it:** [README.md](README.md)
 
 ## Commands
@@ -106,9 +105,12 @@ pkill -f "[f]lask --app bookflow.app run"
 7. **Vendored epubkit is third-party code** (`optimizer/epubkit/`, MIT —
    keep `NOTICE`, keep the ruff per-file-ignores). Avoid editing it;
    upstream it separately if the pipeline itself must change.
-8. **Non-goals** (plan.md §33): no multi-user, uploads, book
-   delete/rename/move UI, background/scheduled optimization, separate
-   progression per device.
+8. **Non-goals:** no multi-user or roles, uploads, book delete/rename/move
+   or metadata/cover editing, cloud storage, Calibre/Elasticsearch/Redis/
+   Celery/K8s/microservices, a separate epubkit HTTP server,
+   background or scheduled optimization, pre-generated X3/X4 files, and no
+   separate progression per device or per optimization profile. Keep the
+   application small.
 
 ## Known gotchas
 

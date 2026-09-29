@@ -13,6 +13,5 @@ library
 *.db
 *.sqlite3
 tests
-plan.md
 ARCHITECTURE.md
 AGENTS.md
