@@ -109,7 +109,7 @@ bookflow/
 │   │                             add_folder, health
 │   └── static/style.css
 │
-└── tests/                        193 tests (see §11)
+└── tests/                        197 tests (see §11)
 ```
 
 Deliberate deviations from the originally sketched layout: every ORM model
@@ -436,7 +436,7 @@ threads (`check_same_thread=False` + WAL-free default journal).
 
 ## 11. Testing
 
-`tests/` (193 tests, `uv run pytest`):
+`tests/` (197 tests, `uv run pytest`):
 
 - `conftest.py` — temp `Settings` (fresh data dir + SQLite per test) and a
   bare app fixture; every suite that needs migrations shadows these with an
