@@ -69,7 +69,15 @@ A `401` returns the OPDS Authentication Document
 | `/opds/books/<id>`    | Feed for a single book                                |
 | `/opds/download/<id>` | The book file itself (attachment)                     |
 | `/opds/cover/<id>`    | Cover image extracted from the EPUB on demand (`404` when absent) |
+| `/opds/x3/download/<id>` | EPUB optimized for the Xteink X3 (on demand, cached) |
+| `/opds/x4/download/<id>` | EPUB optimized for the Xteink X4 (on demand, cached) |
 | `/opds/publications/<id>/progression` | Reading position per OPDS Progression 1.0: `GET` reads, `PUT` updates (`application/opds-progression+json`); conflicts are `409` problem details |
+
+Optimization runs only when an X3/X4 download is requested — never during
+scans or startup — using a vendored copy of the
+[epubkit](https://github.com/b1rdmania/epubkit) pipeline. Results are cached
+under `data/cache/optimized/{x3,x4}/` and rebuilt automatically when the
+source file changes. The original library files are never modified.
 
 ## Development
 

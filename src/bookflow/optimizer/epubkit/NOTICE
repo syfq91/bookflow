@@ -1,0 +1,10 @@
+The files in this directory are a vendored copy of the processing pipeline
+from https://github.com/b1rdmania/epubkit, which is distributed under the MIT
+license as stated by the upstream project.
+
+Modifications made while vendoring:
+
+- sibling module imports converted to package-relative imports
+- the FastAPI web application, templates, static assets and upstream tests
+  were not copied
+- no functional changes were made to the pipeline itself

@@ -36,6 +36,7 @@ from bookflow.opds.generator import (
     book_mime_type,
     navigation_feed,
 )
+from bookflow.optimizer.service import OptimizationError, optimize_book
 
 bp = Blueprint("opds", __name__, url_prefix="/opds")
 
@@ -300,6 +301,19 @@ def cover(book_id: int):
     )
 
 
+# --- optimized acquisition --------------------------------------------------
+
+
+@bp.get("/x3/download/<int:book_id>")
+def x3_download(book_id: int):
+    return _optimized_download(book_id, "x3")
+
+
+@bp.get("/x4/download/<int:book_id>")
+def x4_download(book_id: int):
+    return _optimized_download(book_id, "x4")
+
+
 # --- errors -----------------------------------------------------------------
 
 
@@ -310,6 +324,7 @@ def unknown_path(unknown: str):
 
 @bp.errorhandler(404)
 @bp.errorhandler(403)
+@bp.errorhandler(500)
 def _catalog_error(error):
     description = getattr(error, "description", None) or "Request failed"
     body = (
@@ -354,6 +369,26 @@ def _book_file(book_id: int) -> Path:
     if not target.is_relative_to(root) or not target.is_file():
         abort(404)
     return target
+
+
+def _optimized_download(book_id: int, profile: str) -> Response:
+    source = _book_file(book_id)
+    if source.suffix.lower() != ".epub":
+        abort(404)
+    try:
+        optimized = optimize_book(book_id, profile, source)
+    except OptimizationError:
+        abort(
+            500,
+            description="The optimized publication could not be generated.",
+        )
+    return send_file(
+        optimized,
+        mimetype="application/epub+zip",
+        as_attachment=True,
+        download_name=source.name,
+        conditional=True,
+    )
 
 
 def _search_condition(query: str):
