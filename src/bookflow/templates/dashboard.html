@@ -40,19 +40,37 @@
     <dd>
       {{ stats.last_scan.strftime('%Y-%m-%d %H:%M') if stats.last_scan else 'never' }}
     </dd>
+    <dt>Duration</dt>
+    <dd>
+      {% if stats.last_scan_duration is not none %}
+      {{ '%.1f'|format(stats.last_scan_duration) }} s
+      {% else %}
+      —
+      {% endif %}
+    </dd>
   </dl>
 </section>
 
 <div class="grid">
   <section class="card">
     <h2>Optimization cache</h2>
-    <p class="muted">X3/X4 cache sizes arrive in Milestone 8.</p>
+    <dl class="detail">
+      <dt>X3</dt>
+      <dd>{{ stats.cache.x3|filesizeformat }}</dd>
+      <dt>X4</dt>
+      <dd>{{ stats.cache.x4|filesizeformat }}</dd>
+    </dl>
   </section>
   <section class="card">
     <h2>Health</h2>
-    <p class="muted">
-      Database, library, OPDS and epubkit checks arrive in Milestone 8.
-    </p>
+    <dl class="detail">
+      {% for check in checks %}
+      <dt>{{ check.component }}</dt>
+      <dd>
+        <span class="badge badge-{{ check.status }}">{{ check.status|upper }}</span>
+      </dd>
+      {% endfor %}
+    </dl>
   </section>
 </div>
 {% endblock %}

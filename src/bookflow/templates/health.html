@@ -4,10 +4,115 @@
 
 {% block content %}
 <h1>Health</h1>
+
+{% if stats.db_error %}
+<p class="error" role="alert">{{ stats.db_error }}</p>
+{% endif %}
+
 <section class="card">
-  <p class="muted">
-    Database, library, cache, optimizer and OPDS health checks arrive in
-    Milestone 8.
-  </p>
+  <h2>Components</h2>
+  <dl class="detail">
+    {% for check in checks %}
+    <dt>{{ check.component }}</dt>
+    <dd>
+      <span class="badge badge-{{ check.status }}">{{ check.status|upper }}</span>
+      <span class="muted">{{ check.detail }}</span>
+    </dd>
+    {% endfor %}
+  </dl>
 </section>
+
+{% if not stats.db_error %}
+<section class="card">
+  <h2>Scanner</h2>
+  <dl class="detail">
+    <dt>Last success</dt>
+    <dd>
+      {% if stats.scanner.last_success %}
+      {{ stats.scanner.last_success.at.strftime('%Y-%m-%d %H:%M') }}
+      &middot; {{ stats.scanner.last_success.folder }}
+      {% if stats.scanner.last_success.duration is not none %}
+      &middot; {{ '%.1f'|format(stats.scanner.last_success.duration) }} s
+      {% endif %}
+      {% else %}
+      never
+      {% endif %}
+    </dd>
+    <dt>Errors</dt>
+    <dd>
+      {% if stats.scanner.errors %}
+      <span class="badge badge-error">{{ stats.scanner.errors|length }} folder(s)</span>
+      {% else %}
+      <span class="badge badge-ok">OK</span>
+      {% endif %}
+    </dd>
+  </dl>
+  {% for error in stats.scanner.errors %}
+  <p class="error">{{ error.folder }}: {{ error.message }}</p>
+  {% endfor %}
+</section>
+
+<section class="card">
+  <h2>Library statistics</h2>
+  <dl class="detail">
+    <dt>Books</dt>
+    <dd>{{ stats.total_books }}</dd>
+    <dt>Library size</dt>
+    <dd>{{ stats.total_size|filesizeformat }}</dd>
+    <dt>Progression</dt>
+    <dd>{{ stats.progression.books }} book(s)</dd>
+    <dt>Devices</dt>
+    <dd>
+      {% if stats.progression.devices %}
+      {{ stats.progression.devices|join(', ') }}
+      {% else %}
+      none yet
+      {% endif %}
+    </dd>
+  </dl>
+</section>
+
+<div class="grid">
+  <section class="card">
+    <h2>By format</h2>
+    <dl class="detail">
+      {% for row in stats.formats %}
+      <dt>{{ row.format }}</dt>
+      <dd>{{ row.books }} &middot; {{ row.size|filesizeformat }}</dd>
+      {% else %}
+      <dt>—</dt>
+      <dd>No books indexed.</dd>
+      {% endfor %}
+    </dl>
+  </section>
+  <section class="card">
+    <h2>Per folder</h2>
+    <dl class="detail">
+      {% for folder in stats.folders %}
+      <dt>{{ folder.name }}</dt>
+      <dd>{{ folder.books }} &middot; {{ folder.size|filesizeformat }}</dd>
+      {% else %}
+      <dt>—</dt>
+      <dd>No folders registered.</dd>
+      {% endfor %}
+    </dl>
+  </section>
+</div>
+
+<section class="card">
+  <h2>Optimization cache</h2>
+  <dl class="detail">
+    <dt>X3</dt>
+    <dd>
+      {{ stats.cache.x3.books }} book(s) &middot;
+      {{ stats.cache.x3.size|filesizeformat }}
+    </dd>
+    <dt>X4</dt>
+    <dd>
+      {{ stats.cache.x4.books }} book(s) &middot;
+      {{ stats.cache.x4.size|filesizeformat }}
+    </dd>
+  </dl>
+</section>
+{% endif %}
 {% endblock %}

@@ -17,8 +17,10 @@ from sqlalchemy.exc import OperationalError
 
 from bookflow.auth.decorators import login_required
 from bookflow.auth.service import validate_csrf
+from bookflow.config import Settings
 from bookflow.database.database import session_scope
-from bookflow.database.models import Book, LibraryFolder
+from bookflow.database.models import Book, LibraryFolder, OptimizedBook
+from bookflow.health import HealthCheck, library_statistics, run_checks
 from bookflow.library.scanner import ScanInProgress, ScanResult, scan_folder
 from bookflow.library.service import (
     add_folder,
@@ -31,6 +33,8 @@ bp = Blueprint("admin", __name__, url_prefix="/admin")
 
 _WRITE_METHODS = ("POST", "PUT", "PATCH", "DELETE")
 
+_DASHBOARD_COMPONENTS = ("Database", "Library", "OPDS", "epubkit")
+
 
 @bp.before_request
 def _require_csrf_for_writes():
@@ -42,7 +46,12 @@ def _require_csrf_for_writes():
 @bp.get("/")
 @login_required
 def dashboard():
-    return render_template("dashboard.html", stats=_dashboard_stats())
+    settings = current_app.config["SETTINGS"]
+    return render_template(
+        "dashboard.html",
+        stats=_dashboard_stats(),
+        checks=_dashboard_checks(settings),
+    )
 
 
 @bp.get("/folders")
@@ -107,7 +116,12 @@ def folder_delete(folder_id: int):
 @bp.get("/health")
 @login_required
 def health():
-    return render_template("health.html")
+    settings = current_app.config["SETTINGS"]
+    return render_template(
+        "health.html",
+        checks=run_checks(settings),
+        stats=_health_stats(),
+    )
 
 
 def _folders_response():
@@ -140,6 +154,25 @@ def _scan_message(path: str, result: ScanResult) -> str:
     return f"{message} in {result.duration:.1f}s"
 
 
+def _dashboard_checks(settings: Settings) -> list[HealthCheck]:
+    return [
+        check
+        for check in run_checks(settings)
+        if check.component in _DASHBOARD_COMPONENTS
+    ]
+
+
+def _health_stats() -> dict[str, object]:
+    try:
+        return library_statistics()
+    except OperationalError:
+        return {
+            "db_error": (
+                "Database not initialized. Run: uv run alembic upgrade head"
+            )
+        }
+
+
 def _dashboard_stats() -> dict[str, object]:
     try:
         return _query_stats()
@@ -149,7 +182,9 @@ def _dashboard_stats() -> dict[str, object]:
             "folders": 0,
             "total_size": 0,
             "last_scan": None,
+            "last_scan_duration": None,
             "scan_errors": 0,
+            "cache": {"x3": 0, "x4": 0},
             "db_error": "Database not initialized. Run: uv run alembic upgrade head",
         }
 
@@ -170,10 +205,26 @@ def _query_stats() -> dict[str, object]:
             or 0
         )
         last_scan = session.scalar(select(func.max(LibraryFolder.last_scan_at)))
+        latest = session.scalar(
+            select(LibraryFolder)
+            .where(LibraryFolder.last_scan_at.is_not(None))
+            .order_by(LibraryFolder.last_scan_at.desc())
+            .limit(1)
+        )
+        cache = {"x3": 0, "x4": 0}
+        for row in session.execute(
+            select(
+                OptimizedBook.profile,
+                func.coalesce(func.sum(OptimizedBook.optimized_size), 0),
+            ).group_by(OptimizedBook.profile)
+        ):
+            cache[row[0]] = int(row[1])
     return {
         "books": int(books),
         "folders": int(folders),
         "total_size": int(total_size),
         "last_scan": last_scan,
+        "last_scan_duration": latest.last_scan_duration if latest else None,
         "scan_errors": int(scan_errors),
+        "cache": cache,
     }

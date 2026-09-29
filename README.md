@@ -38,6 +38,12 @@ Set `OPDS_ADMIN_PASSWORD` and open `/admin/login`. Admin routes require a
 session; the OPDS routes use HTTP Basic Auth with the same credentials.
 Without `OPDS_ADMIN_PASSWORD` the login form and the OPDS catalog return `503`.
 
+The dashboard shows books, folders, library size, last scan, optimization
+cache sizes and health badges. `/admin/health` runs per-component checks
+(database, library folders, cache, epubkit, OPDS) and lists library
+statistics: books by format, books per folder, progression and known
+devices, cache contents, and scanner status with the last successful scan.
+
 ## Library folders
 
 Register an absolute folder path under **Folders → Add Folder**. BookFlow only
