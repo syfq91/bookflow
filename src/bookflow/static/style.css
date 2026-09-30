@@ -263,6 +263,15 @@ a.button:hover {
   font-size: 1.05rem;
 }
 
+.folder-name {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.folder-name:hover {
+  color: var(--accent);
+}
+
 .path {
   margin: 0.15rem 0 0;
   color: var(--muted);

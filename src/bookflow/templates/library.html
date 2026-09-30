@@ -4,36 +4,6 @@
 
 {% block content %}
 <section class="card">
-  {% if folder is none %}
-  <div class="page-head">
-    <h1>Library</h1>
-  </div>
-  <p class="muted">
-    Registered folders. Click a folder to browse it; click a file to
-    download it.
-  </p>
-  {% if folders %}
-  <ul class="browse-list">
-    {% for item in folders %}
-    <li class="browse-row">
-      <a
-        class="browse-name"
-        href="{{ url_for('admin.library_tree', folder_id=item.id) }}"
-        >{{ item.name }}</a
-      >
-      <span class="path">{{ item.path }}</span>
-      <span class="muted"
-        >{{ item.books }} book{% if item.books != 1 %}s{% endif %}</span
-      >
-    </li>
-    {% endfor %}
-  </ul>
-  {% else %}
-  <p class="muted">No library folders yet.</p>
-  <p><a href="{{ url_for('admin.folders') }}">Add a folder</a> to start browsing.</p>
-  {% endif %}
-
-  {% else %}
   <nav class="browse-crumb" aria-label="Breadcrumb">
     {% for label, crumb_path in crumbs %}
     {% if loop.last %}
@@ -55,7 +25,7 @@
       >&uarr; Up</a
     >
     {% else %}
-    <a href="{{ url_for('admin.library_index') }}">&uarr; Up</a>
+    <a href="{{ url_for('admin.folders') }}">&uarr; Up</a>
     {% endif %}
   </p>
 
@@ -98,7 +68,6 @@
 
   {% if not dirs and not books %}
   <p class="muted">Empty folder.</p>
-  {% endif %}
   {% endif %}
 </section>
 {% endblock %}

@@ -312,7 +312,7 @@ def test_folders_page_renders_empty_state(client) -> None:
     resp = client.get("/admin/folders")
 
     assert resp.status_code == 200
-    assert b"Library Folders" in resp.data
+    assert b"<h1>Library</h1>" in resp.data
     assert b"No library folders yet" in resp.data
 
 

@@ -97,25 +97,25 @@ def test_library_routes_require_login(client) -> None:
     assert client.get("/admin/books/1/download").status_code == 302
 
 
-def test_library_index_lists_registered_folders(client, root: Path) -> None:
+def test_library_index_redirects_to_folders(client) -> None:
+    _login(client)
+
+    resp = client.get("/admin/library")
+
+    assert resp.status_code == 302
+    assert resp.headers["Location"].endswith("/admin/folders")
+
+
+def test_folders_lists_registered_folders_without_books(client, root: Path) -> None:
     _login(client)
     folder_id = _seed_tree(root)
 
-    resp = client.get("/admin/library")
+    resp = client.get("/admin/folders")
 
     assert resp.status_code == 200
-    assert b"Library" in resp.data
+    assert b"<h1>Library</h1>" in resp.data
     assert b"top.epub" not in resp.data
     assert f"/admin/library/{folder_id}".encode() in resp.data
-
-
-def test_library_index_empty_state(client) -> None:
-    _login(client)
-
-    resp = client.get("/admin/library")
-
-    assert resp.status_code == 200
-    assert b"No library folders yet" in resp.data
 
 
 def test_dashboard_links_to_library(client) -> None:
@@ -123,7 +123,7 @@ def test_dashboard_links_to_library(client) -> None:
 
     resp = client.get("/admin/")
 
-    assert b'href="/admin/library"' in resp.data
+    assert b'href="/admin/folders">Library</a>' in resp.data
 
 
 def test_tree_lists_subfolders_and_files(client, root: Path) -> None:

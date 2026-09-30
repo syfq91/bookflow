@@ -47,13 +47,15 @@ cache sizes and health badges. `/admin/health` runs per-component checks
 statistics: books by format, books per folder, progression and known
 devices, cache contents, and scanner status with the last successful scan.
 
-**Library** (`/admin/library`) is a plain FTP-style browser over the index:
-click down through folder levels, then click a file to download the
-original. Nothing is ever written to the library.
+**Library** (`/admin/folders`) is the single entry point to the collection:
+it lists the registered folders, and each folder name links into a plain
+FTP-style browser over the index — click down through folder levels, then
+click a file to download the original. Nothing is ever written to the
+library. The old `/admin/library` URL redirects here.
 
 ## Library folders
 
-Register an absolute folder path under **Folders → Add Folder**. Type the
+Register an absolute folder path under **Library → Add Folder**. Type the
 path or use **Browse…** to navigate the server's folders and select one
 (browsing starts at `/`, or at `OPDS_BROWSE_ROOT` when set). BookFlow only
 reads from it: nothing is uploaded, renamed or modified. Registering a folder
@@ -172,7 +174,7 @@ first start, the scan extensions and worker count use their defaults.
 `.env.example` documents the same variables for a bare-metal install.
 
 - The library is bind-mounted **read-only** at `/library` (default host path
-  `./library`). Register `/library` — the *container* path — under **Folders**
+  `./library`). Register `/library` — the *container* path — under **Library**
   after first login; host paths are not visible inside the container.
 - SQLite and the optimization cache live in the `bookflow-data` named
   volume; migrations run automatically at container start.

@@ -142,10 +142,8 @@ def folder_delete(folder_id: int):
 @bp.get("/library")
 @login_required
 def library_index():
-    """List the registered folders — the roots of the library tree."""
-    return render_template(
-        "library.html", folder=None, path="", folders=list_folders()
-    )
+    """The root list lives on the Library page; keep the old URL working."""
+    return redirect(url_for("admin.folders"))
 
 
 @bp.get("/library/<int:folder_id>")
@@ -199,7 +197,6 @@ def library_tree(folder_id: int):
             for name in sorted(dirs, key=str.casefold)
         ],
         books=sorted(books, key=lambda item: str(item["name"]).casefold()),
-        folders=None,
     )
 
 

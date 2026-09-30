@@ -333,9 +333,9 @@ directory itself is treated as rebuildable.
   without a valid CSRF token (`400`) *before* views run.
 - Views: dashboard (`_dashboard_stats()` + health badges, degrades to a
   readable message when migrations are missing), folder CRUD + scan,
-  the FTP-style library browser (`/admin/library` roots → per-folder
-  directory levels from the index, files link to an original-file
-  download), `POST /admin/cache/clear` (flash + redirect),
+  the FTP-style library browser (folder cards on `/admin/folders` link to
+  per-folder directory levels from the index, files link to an
+  original-file download), `POST /admin/cache/clear` (flash + redirect),
   `/admin/health`.
 - There is deliberately **no** upload, delete, rename, move, or metadata
   editing — the UI is a control surface, not a file manager.
@@ -351,13 +351,13 @@ directory itself is treated as rebuildable.
 | GET/POST | `/admin/login` | CSRF on POST, rate limited |
 | POST | `/admin/logout` | CSRF |
 | GET | `/admin/` | dashboard |
-| GET | `/admin/folders`, `/admin/folders/new` | folder list / add form (query `path` prefills) |
+| GET | `/admin/folders`, `/admin/folders/new` | library root list + add form (query `path` prefills) |
 | GET | `/admin/folders/browse` | server-side folder browser, clamped to `OPDS_BROWSE_ROOT` |
 | POST | `/admin/folders` | register + immediate scan |
 | POST | `/admin/folders/<id>/scan` | re-scan (`409` if running) |
 | POST | `/admin/folders/<id>/delete` | drops index rows only |
 | POST | `/admin/cache/clear` | §28 optimization-cache reset |
-| GET | `/admin/library` | library browser: registered folders (roots) |
+| GET | `/admin/library` | `302` → `/admin/folders` (pre-merge URL) |
 | GET | `/admin/library/<id>` | one directory level (`?path=` relative, from the index) |
 | GET | `/admin/books/<id>/download` | original file, `404` outside root |
 | GET | `/admin/health` | component checks + statistics |

@@ -1,10 +1,10 @@
 {% extends "layout.html" %}
 
-{% block title %}Folders · BookFlow{% endblock %}
+{% block title %}Library · BookFlow{% endblock %}
 
 {% block content %}
 <div class="page-head">
-  <h1>Library Folders</h1>
+  <h1>Library</h1>
   <a class="button" href="{{ url_for('admin.folder_new') }}">Add Folder</a>
 </div>
 
@@ -14,13 +14,21 @@
     No library folders yet. Add one to start indexing ebooks.
   </p>
 </section>
+{% else %}
+<p class="muted">Click a folder to browse it; click a file to download it.</p>
 {% endif %}
 
 {% for folder in folders %}
 <section class="card">
   <div class="folder-head">
     <div>
-      <h2>{{ folder.name }}</h2>
+      <h2>
+        <a
+          class="folder-name"
+          href="{{ url_for('admin.library_tree', folder_id=folder.id) }}"
+          >{{ folder.name }}</a
+        >
+      </h2>
       <p class="path">{{ folder.path }}</p>
     </div>
     <div class="folder-actions">
