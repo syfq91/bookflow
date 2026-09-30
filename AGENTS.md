@@ -10,6 +10,7 @@ than greenfield work.
 
 - **How it fits together:** [ARCHITECTURE.md](ARCHITECTURE.md) (start here)
 - **How to run it:** [README.md](README.md)
+- **Config, endpoints, dev/prod details:** [REFERENCE.md](REFERENCE.md)
 
 ## Commands
 

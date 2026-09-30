@@ -3,7 +3,8 @@
 How BookFlow is put together: layered design, module responsibilities,
 request flows, and the invariants every change must preserve.
 
-- Usage and endpoints: [README.md](README.md)
+- Getting started and usage: [README.md](README.md)
+- Configuration, endpoints, development: [REFERENCE.md](REFERENCE.md)
 
 ## 1. Overview
 
@@ -67,7 +68,7 @@ No FastAPI, no Redis, no Celery, no second HTTP service.
 bookflow/
 ├── pyproject.toml / uv.lock      deps, ruff + pytest config
 ├── alembic.ini / migrations/     schema migrations (0001_initial_schema)
-├── README.md / ARCHITECTURE.md / AGENTS.md
+├── README.md / ARCHITECTURE.md / REFERENCE.md / AGENTS.md
 ├── .env.example                  documented OPDS_* variables
 │
 ├── src/bookflow/
