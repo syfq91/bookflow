@@ -31,6 +31,7 @@ All settings come from environment variables (defaults in parentheses):
 | `OPDS_ADMIN_PASSWORD`       | *(empty)*   | Admin password                                     |
 | `OPDS_SESSION_COOKIE_SECURE` | `false`    | Set the session cookie `Secure` flag (behind HTTPS) |
 | `OPDS_SCAN_EXTENSIONS`      | `.epub,.pdf,.cbz,.cbr,.mobi,.azw3` | Comma-separated extensions the scanner indexes |
+| `OPDS_BROWSE_ROOT`          | `/`         | Root the admin folder browser (`Browse…` on Add Folder) is clamped to; typed paths are unaffected |
 
 ## Admin UI
 
@@ -48,7 +49,9 @@ devices, cache contents, and scanner status with the last successful scan.
 
 ## Library folders
 
-Register an absolute folder path under **Folders → Add Folder**. BookFlow only
+Register an absolute folder path under **Folders → Add Folder**. Type the
+path or use **Browse…** to navigate the server's folders and select one
+(browsing starts at `/`, or at `OPDS_BROWSE_ROOT` when set). BookFlow only
 reads from it: nothing is uploaded, renamed or modified. Registering a folder
 indexes it immediately, and **Scan** re-indexes it:
 

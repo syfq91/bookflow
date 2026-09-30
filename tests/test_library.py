@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import re
+import urllib.parse
 from dataclasses import replace
 from pathlib import Path
 
@@ -12,6 +14,8 @@ from bookflow.app import create_app
 from bookflow.config import Settings
 from bookflow.database.database import init_engine, reset_engine, session_scope
 from bookflow.database.models import Book, LibraryFolder
+from bookflow.library import browse as browse_module
+from bookflow.library.browse import browse_directory
 from bookflow.library.scanner import folder_lock, scan_folder
 from bookflow.library.service import add_folder, list_folders, remove_folder
 from factories import csrf_token, make_epub
@@ -44,8 +48,13 @@ def root(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def auth_settings(settings: Settings) -> Settings:
-    return replace(settings, admin_username="admin", admin_password=ADMIN_PASSWORD)
+def auth_settings(settings: Settings, tmp_path: Path) -> Settings:
+    return replace(
+        settings,
+        admin_username="admin",
+        admin_password=ADMIN_PASSWORD,
+        browse_root=tmp_path,
+    )
 
 
 @pytest.fixture
@@ -186,6 +195,107 @@ def test_list_folders_reports_stats(db, root: Path) -> None:
     assert folders[0]["size"] == (root / "dune.epub").stat().st_size
     assert folders[0]["last_scan_status"] == "ok"
     assert folders[0]["last_scan_error"] is None
+
+
+# --- browse service ---------------------------------------------------------
+
+
+def test_browse_lists_directories_only(tmp_path: Path) -> None:
+    (tmp_path / "b-books").mkdir()
+    (tmp_path / "A-comics").mkdir()
+    (tmp_path / "notes.txt").write_text("not a folder")
+    root = tmp_path.resolve()
+
+    result = browse_directory(None, root)
+
+    assert result.ok
+    assert [name for name, _ in result.entries] == ["A-comics", "b-books"]
+    assert result.path == str(root)
+    assert result.parent is None
+    assert not result.truncated
+    assert result.crumbs == [(root.name or str(root), str(root))]
+
+
+def test_browse_nested_shows_parent_and_crumbs(tmp_path: Path) -> None:
+    child = tmp_path / "media" / "books"
+    child.mkdir(parents=True)
+    root = tmp_path.resolve()
+
+    result = browse_directory(str(child), root)
+
+    assert result.ok
+    assert result.path == str(child.resolve())
+    assert result.parent == str(root / "media")
+    assert [label for label, _ in result.crumbs] == [
+        root.name or str(root),
+        "media",
+        "books",
+    ]
+    assert result.crumbs[-1] == ("books", str(child.resolve()))
+
+
+def test_browse_rejects_outside_root(tmp_path: Path) -> None:
+    result = browse_directory("/etc", tmp_path)
+
+    assert not result.ok
+    assert "outside the browse root" in (result.error or "")
+
+
+def test_browse_rejects_relative_path(tmp_path: Path) -> None:
+    result = browse_directory("books", tmp_path)
+
+    assert not result.ok
+    assert "absolute" in (result.error or "")
+
+
+def test_browse_rejects_missing_path(tmp_path: Path) -> None:
+    result = browse_directory(str(tmp_path / "nope"), tmp_path)
+
+    assert not result.ok
+    assert "does not exist" in (result.error or "")
+
+
+def test_browse_rejects_file(tmp_path: Path) -> None:
+    target = tmp_path / "file.txt"
+    target.write_text("not a folder")
+
+    result = browse_directory(str(target), tmp_path)
+
+    assert not result.ok
+    assert "not a directory" in (result.error or "")
+
+
+def test_browse_unusable_root(tmp_path: Path) -> None:
+    result = browse_directory(None, tmp_path / "missing-root")
+
+    assert not result.ok
+    assert "not usable" in (result.error or "")
+
+
+def test_browse_caps_entries(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    for index in range(5):
+        (tmp_path / f"dir{index}").mkdir()
+    monkeypatch.setattr(browse_module, "MAX_ENTRIES", 2)
+
+    result = browse_directory(None, tmp_path)
+
+    assert result.ok
+    assert len(result.entries) == 2
+    assert result.truncated
+
+
+def test_browse_follows_symlinked_directory(tmp_path: Path) -> None:
+    target = tmp_path / "real" / "nested"
+    target.mkdir(parents=True)
+    (tmp_path / "alias").symlink_to(tmp_path / "real")
+    root = tmp_path.resolve()
+
+    listing = browse_directory(None, root)
+    assert ("alias", str(root / "alias")) in listing.entries
+
+    drilled = browse_directory(str(root / "alias"), root)
+    assert drilled.ok
+    assert drilled.path == str((tmp_path / "real").resolve())
 
 
 # --- admin routes ----------------------------------------------------------
@@ -366,3 +476,143 @@ def test_delete_unknown_folder_returns_404(client) -> None:
     )
 
     assert resp.status_code == 404
+
+
+# --- browse routes ----------------------------------------------------------
+
+
+def _hrefs_to(html: bytes, endpoint: str) -> list[str]:
+    """Decoded hrefs pointing at ``endpoint`` (query included)."""
+    text = html.decode()
+    pattern = rf'href="([^"]*{re.escape(endpoint)}[^"]*)"'
+    return [urllib.parse.unquote(match) for match in re.findall(pattern, text)]
+
+
+def test_browse_requires_login(client) -> None:
+    assert client.get("/admin/folders/browse").status_code == 302
+
+
+def test_browse_page_renders_directories(client, tmp_path: Path) -> None:
+    _login(client)
+    (tmp_path / "media").mkdir()
+
+    resp = client.get("/admin/folders/browse")
+
+    assert resp.status_code == 200
+    assert b"Browse server folders" in resp.data
+    assert b">media<" in resp.data
+    assert b"Select this folder" in resp.data
+
+
+def test_browse_outside_root_returns_400(client) -> None:
+    _login(client)
+
+    resp = client.get("/admin/folders/browse?path=/etc")
+
+    assert resp.status_code == 400
+    assert b"outside the browse root" in resp.data
+
+
+def test_browse_relative_path_returns_400(client) -> None:
+    _login(client)
+
+    resp = client.get("/admin/folders/browse?path=books")
+
+    assert resp.status_code == 400
+    assert b"absolute" in resp.data
+
+
+def test_browse_drill_down_offers_up_link(client, tmp_path: Path) -> None:
+    _login(client)
+    child = tmp_path / "media" / "books"
+    child.mkdir(parents=True)
+    root = tmp_path.resolve()
+
+    resp = client.get(f"/admin/folders/browse?path={child}")
+
+    assert resp.status_code == 200
+    assert b"&uarr; Up" in resp.data
+    up_links = [
+        href
+        for href in _hrefs_to(resp.data, "/admin/folders/browse")
+        if href.endswith(f"path={root}")
+    ]
+    assert up_links
+    assert b"Select this folder" in resp.data
+
+
+def test_add_form_prefills_path_from_query(client, tmp_path: Path) -> None:
+    _login(client)
+
+    resp = client.get(f"/admin/folders/new?path={tmp_path}")
+
+    assert resp.status_code == 200
+    assert f'value="{tmp_path}"'.encode() in resp.data
+
+
+def test_add_form_links_to_browser(client, tmp_path: Path) -> None:
+    _login(client)
+
+    resp = client.get(f"/admin/folders/new?path={tmp_path}")
+
+    browse_links = _hrefs_to(resp.data, "/admin/folders/browse")
+    assert browse_links
+    assert browse_links[0].endswith(f"path={tmp_path}")
+
+
+def test_browse_select_links_target_the_form(client, tmp_path: Path) -> None:
+    _login(client)
+    target = tmp_path / "picked"
+    target.mkdir()
+
+    resp = client.get("/admin/folders/browse")
+
+    select_links = _hrefs_to(resp.data, "/admin/folders/new")
+    assert any(link.endswith(f"path={target}") for link in select_links)
+
+
+def test_browse_marks_registered_and_conflicting_folders(
+    client, tmp_path: Path
+) -> None:
+    _login(client)
+    registered = tmp_path / "lib"
+    registered.mkdir()
+    holder = tmp_path / "holder" / "nested"
+    holder.mkdir(parents=True)
+    assert add_folder(str(registered)).ok
+    assert add_folder(str(holder)).ok
+
+    resp = client.get("/admin/folders/browse")
+
+    assert resp.status_code == 200
+    html = resp.data.decode()
+    assert re.search(
+        r"lib</a\s*>\s*<span class=\"badge badge-ok\">registered", html
+    )
+    assert re.search(
+        r"holder</a\s*>\s*<span class=\"badge badge-warn\">conflicts", html
+    )
+
+
+def test_browse_to_register_flow(client, tmp_path: Path) -> None:
+    _login(client)
+    target = tmp_path / "picked"
+    target.mkdir()
+    make_epub(target / "dune.epub", title="Dune")
+
+    browse = client.get("/admin/folders/browse")
+    assert browse.status_code == 200
+    assert b"picked" in browse.data
+
+    form = client.get(f"/admin/folders/new?path={target}")
+    assert f'value="{target}"'.encode() in form.data
+
+    resp = client.post(
+        "/admin/folders",
+        data={"path": str(target), "csrf_token": csrf_token(client)},
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert b"1 added" in resp.data
+    with session_scope() as session:
+        assert session.query(Book).count() == 1

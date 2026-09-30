@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from flask import (
     Blueprint,
     abort,
@@ -21,6 +23,7 @@ from bookflow.config import Settings
 from bookflow.database.database import session_scope
 from bookflow.database.models import Book, LibraryFolder, OptimizedBook
 from bookflow.health import HealthCheck, library_statistics, run_checks
+from bookflow.library.browse import BrowseResult, browse_directory
 from bookflow.library.scanner import ScanInProgress, ScanResult, scan_folder
 from bookflow.library.service import (
     add_folder,
@@ -64,7 +67,26 @@ def folders():
 @bp.get("/folders/new")
 @login_required
 def folder_new():
-    return render_template("add_folder.html", path="", error=None)
+    return render_template(
+        "add_folder.html", path=request.args.get("path", ""), error=None
+    )
+
+
+@bp.get("/folders/browse")
+@login_required
+def folder_browse():
+    settings = current_app.config["SETTINGS"]
+    raw = request.args.get("path", "")
+    result = browse_directory(raw, settings.browse_root)
+    registered = [folder["path"] for folder in list_folders()]
+    response = render_template(
+        "browse_folders.html",
+        browse=result,
+        raw=raw,
+        registered=registered,
+        conflicts=_browse_conflicts(result, registered),
+    )
+    return response, (200 if result.ok else 400)
 
 
 @bp.post("/folders")
@@ -139,6 +161,23 @@ def health():
 
 def _folders_response():
     return render_template("folders.html", folders=list_folders())
+
+
+def _browse_conflicts(result: BrowseResult, registered: list[str]) -> set[str]:
+    """Entry paths ``add_folder()`` would reject: nested in a registered folder."""
+    if not result.ok:
+        return set()
+    conflicts: set[str] = set()
+    for _name, entry_path in result.entries:
+        if entry_path in registered:
+            continue
+        candidate = Path(entry_path)
+        if any(
+            candidate.is_relative_to(other) or other.is_relative_to(candidate)
+            for other in map(Path, registered)
+        ):
+            conflicts.add(entry_path)
+    return conflicts
 
 
 def _run_scan(folder_id: int | None, path: str | None) -> str | None:

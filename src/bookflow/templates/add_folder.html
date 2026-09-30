@@ -24,6 +24,10 @@
       required
       autofocus
     />
+    <p class="browse-hint">
+      <a href="{{ url_for('admin.folder_browse', path=path) }}">Browse&hellip;</a>
+      to pick a folder on the server instead of typing it.
+    </p>
     <div class="form-actions">
       <a href="{{ url_for('admin.folders') }}">Cancel</a>
       <button type="submit">Add Folder</button>

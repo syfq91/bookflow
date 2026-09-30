@@ -11,7 +11,7 @@ wheels/
 
 # Application data
 data/
-library/
+/library/
 .env
 
 # Databases

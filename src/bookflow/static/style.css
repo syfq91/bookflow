@@ -319,3 +319,104 @@ button.secondary:hover {
   border-color: #f7c9c5;
   color: var(--error);
 }
+
+.browse-hint {
+  margin: 0.4rem 0 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.browse-hint a {
+  color: var(--accent);
+}
+
+.browse-crumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.35rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9rem;
+}
+
+.browse-crumb a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.browse-crumb a:hover {
+  text-decoration: underline;
+}
+
+.browse-crumb span[aria-current="page"] {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.browse-sep {
+  color: var(--muted);
+}
+
+.browse-up {
+  margin: 0.25rem 0 0.75rem;
+  font-size: 0.9rem;
+}
+
+.browse-up a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.browse-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+}
+
+.browse-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.browse-row:last-child {
+  border-bottom: none;
+}
+
+.browse-name {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  font-weight: 500;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.browse-name:hover {
+  color: var(--accent);
+}
+
+.browse-select {
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+
+.browse-select:hover {
+  color: var(--accent);
+}
+
+.browse-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.browse-actions a:not(.button) {
+  color: var(--muted);
+}

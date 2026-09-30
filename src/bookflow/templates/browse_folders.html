@@ -1,0 +1,72 @@
+{% extends "layout.html" %}
+
+{% block title %}Browse folders · BookFlow{% endblock %}
+
+{% block content %}
+<section class="card">
+  <h1>Browse server folders</h1>
+  <p class="muted">
+    Pick a folder to add. BookFlow only reads from it; nothing is uploaded,
+    moved or modified.
+  </p>
+  {% if not browse.ok %}
+  <p class="error" role="alert">{{ browse.error }}</p>
+  <div class="browse-actions">
+    <a href="{{ url_for('admin.folder_new', path=raw) }}">Back to form</a>
+  </div>
+  {% else %}
+  <nav class="browse-crumb" aria-label="Breadcrumb">
+    {% for label, crumb_path in browse.crumbs %}
+    {% if loop.last %}
+    <span aria-current="page">{{ label }}</span>
+    {% else %}
+    <a href="{{ url_for('admin.folder_browse', path=crumb_path) }}">{{ label }}</a>
+    <span class="browse-sep" aria-hidden="true">/</span>
+    {% endif %}
+    {% endfor %}
+  </nav>
+  <p class="path">{{ browse.path }}</p>
+  {% if browse.parent %}
+  <p class="browse-up">
+    <a href="{{ url_for('admin.folder_browse', path=browse.parent) }}">&uarr; Up</a>
+  </p>
+  {% endif %}
+  {% if browse.entries %}
+  <ul class="browse-list">
+    {% for name, entry_path in browse.entries %}
+    <li class="browse-row">
+      <a
+        class="browse-name"
+        href="{{ url_for('admin.folder_browse', path=entry_path) }}"
+        >{{ name }}</a
+      >
+      {% if entry_path in registered %}
+      <span class="badge badge-ok">registered</span>
+      {% elif entry_path in conflicts %}
+      <span class="badge badge-warn">conflicts</span>
+      {% endif %}
+      <a
+        class="browse-select"
+        href="{{ url_for('admin.folder_new', path=entry_path) }}"
+        >Select</a
+      >
+    </li>
+    {% endfor %}
+  </ul>
+  {% if browse.truncated %}
+  <p class="muted">
+    Showing the first {{ browse.entries | length }} folders only.
+  </p>
+  {% endif %}
+  {% else %}
+  <p class="muted">No subfolders here.</p>
+  {% endif %}
+  <div class="browse-actions">
+    <a href="{{ url_for('admin.folder_new', path=raw) }}">Back to form</a>
+    <a class="button" href="{{ url_for('admin.folder_new', path=browse.path) }}"
+      >Select this folder</a
+    >
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

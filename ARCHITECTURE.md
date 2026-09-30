@@ -88,6 +88,7 @@ bookflow/
 │   │
 │   ├── library/                  filesystem → index
 │   │   ├── service.py            register/list/remove folders
+│   │   ├── browse.py             clamped directory listing for the picker
 │   │   ├── scanner.py            walk, reconcile, scan statistics
 │   │   └── metadata.py           EPUB/PDF metadata + on-demand cover
 │   │
@@ -106,10 +107,10 @@ bookflow/
 │   │   └── service.py            component checks + library statistics
 │   │
 │   ├── templates/                layout, login, dashboard, folders,
-│   │                             add_folder, health
+│   │                             add_folder, browse_folders, health
 │   └── static/style.css
 │
-└── tests/                        198 tests (see §11)
+└── tests/                        219 tests (see §11)
 ```
 
 Deliberate deviations from the originally sketched layout: every ORM model
@@ -155,6 +156,7 @@ environment variable with a default (see `.env.example`):
 | `OPDS_ADMIN_USERNAME` / `OPDS_ADMIN_PASSWORD` | `admin` / *(empty)* | empty password → OPDS returns `503` |
 | `OPDS_SESSION_COOKIE_SECURE` | `false` | enable behind HTTPS |
 | `OPDS_SCAN_EXTENSIONS` | `.epub,.pdf,.cbz,.cbr,.mobi,.azw3` | scanner scope |
+| `OPDS_BROWSE_ROOT` | `/` | root the admin folder browser is clamped to (typed paths unaffected) |
 
 Derived paths: `cache_dir = data/cache/optimized`,
 `x3_cache_dir`/`x4_cache_dir` beneath it. No password is ever stored —
@@ -221,6 +223,11 @@ directory itself is treated as rebuildable.
   readable, normalized via `resolve()`, not nested inside another registered
   folder) and inserts a `library_folders` row. `remove_folder()` deletes only
   the row — files on disk are untouched.
+- `browse.browse_directory(raw_path, root)` lists one directory for the
+  admin picker: read-only, clamped to `OPDS_BROWSE_ROOT` with
+  `resolve()` + `is_relative_to()`, directories only, capped at 500
+  entries. Selection just prefills the add-folder form; registration
+  still goes through `add_folder()`.
 - `scanner.scan_folder(folder_id, extensions)`:
   - a per-folder `threading.Lock` makes concurrent scans of the same folder
     fail fast with `ScanInProgress` → HTTP `409`;
@@ -336,7 +343,8 @@ directory itself is treated as rebuildable.
 | GET/POST | `/admin/login` | CSRF on POST, rate limited |
 | POST | `/admin/logout` | CSRF |
 | GET | `/admin/` | dashboard |
-| GET | `/admin/folders`, `/admin/folders/new` | folder list / add form |
+| GET | `/admin/folders`, `/admin/folders/new` | folder list / add form (query `path` prefills) |
+| GET | `/admin/folders/browse` | server-side folder browser, clamped to `OPDS_BROWSE_ROOT` |
 | POST | `/admin/folders` | register + immediate scan |
 | POST | `/admin/folders/<id>/scan` | re-scan (`409` if running) |
 | POST | `/admin/folders/<id>/delete` | drops index rows only |
@@ -438,7 +446,7 @@ threads (`check_same_thread=False` + WAL-free default journal).
 
 ## 11. Testing
 
-`tests/` (198 tests, `uv run pytest`):
+`tests/` (219 tests, `uv run pytest`):
 
 - `conftest.py` — temp `Settings` (fresh data dir + SQLite per test) and a
   bare app fixture; every suite that needs migrations shadows these with an

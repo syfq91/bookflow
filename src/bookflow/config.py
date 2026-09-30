@@ -54,6 +54,7 @@ class Settings:
     admin_password: str
     session_cookie_secure: bool = False
     scan_extensions: tuple[str, ...] = DEFAULT_SCAN_EXTENSIONS
+    browse_root: Path = Path("/")
 
     @property
     def cache_dir(self) -> Path:
@@ -86,6 +87,9 @@ class Settings:
             session_cookie_secure=_env_bool("OPDS_SESSION_COOKIE_SECURE", False),
             scan_extensions=_parse_extensions(
                 _env("OPDS_SCAN_EXTENSIONS", "")
+            ),
+            browse_root=(
+                Path(_env("OPDS_BROWSE_ROOT", "/")).expanduser().resolve()
             ),
         )
 

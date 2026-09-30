@@ -66,6 +66,22 @@ def test_session_cookie_secure_env_override(monkeypatch, tmp_path: Path) -> None
     assert Settings.from_env().session_cookie_secure is True
 
 
+def test_browse_root_defaults_to_filesystem_root(monkeypatch, tmp_path: Path) -> None:
+    for key in list(os.environ):
+        if key.startswith("OPDS_"):
+            monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("OPDS_DATA_DIR", str(tmp_path / "data"))
+
+    assert Settings.from_env().browse_root == Path("/")
+
+
+def test_browse_root_env_override(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("OPDS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("OPDS_BROWSE_ROOT", str(tmp_path / "media"))
+
+    assert Settings.from_env().browse_root == (tmp_path / "media").resolve()
+
+
 def test_derived_cache_paths(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     settings = Settings(
