@@ -35,6 +35,7 @@ from bookflow.opds.generator import (
     acquisition_feed,
     author_entry,
     book_mime_type,
+    nav_entry,
     navigation_feed,
 )
 from bookflow.optimizer.service import OptimizationError, optimize_book
@@ -87,47 +88,21 @@ def x4_feed() -> Response:
 
 def _catalog_root(profile: str | None) -> Response:
     ep = _endpoints(profile)
-    links = [
-        Link(
-            SUBSECTION_REL,
-            url_for(ep.books),
-            ACQUISITION_TYPE,
-            title="All Books",
-        ),
-        Link(
-            SUBSECTION_REL,
-            url_for(ep.recent),
-            ACQUISITION_TYPE,
-            title="Recent",
-        ),
-        Link(
-            SUBSECTION_REL,
-            url_for(ep.authors),
-            NAVIGATION_TYPE,
-            title="Authors",
-        ),
-        Link(
-            SUBSECTION_REL,
-            url_for(ep.folders),
-            NAVIGATION_TYPE,
-            title="Folders",
-        ),
+    sections: list[tuple[str, str, str]] = [
+        ("All Books", url_for(ep.books), ACQUISITION_TYPE),
+        ("Recent", url_for(ep.recent), ACQUISITION_TYPE),
+        ("Authors", url_for(ep.authors), NAVIGATION_TYPE),
+        ("Folders", url_for(ep.folders), NAVIGATION_TYPE),
     ]
     if profile is None:
-        links += [
-            Link(
-                SUBSECTION_REL,
-                url_for("opds.x3_feed"),
-                ACQUISITION_TYPE,
-                title="X3 Catalog",
-            ),
-            Link(
-                SUBSECTION_REL,
-                url_for("opds.x4_feed"),
-                ACQUISITION_TYPE,
-                title="X4 Catalog",
-            ),
+        sections += [
+            ("X3 Catalog", url_for("opds.x3_feed"), NAVIGATION_TYPE),
+            ("X4 Catalog", url_for("opds.x4_feed"), NAVIGATION_TYPE),
         ]
+    links = [
+        Link(SUBSECTION_REL, href, link_type, title=name)
+        for name, href, link_type in sections
+    ]
     links.append(
         Link(
             SEARCH_REL,
@@ -141,6 +116,16 @@ def _catalog_root(profile: str | None) -> Response:
             updated = session.scalar(select(func.max(Book.updated_at)))
         except OperationalError:
             updated = None
+    entries = [
+        nav_entry(
+            entry_id=f"tag:bookflow,section,{href}",
+            title=name,
+            href=href,
+            link_type=link_type,
+            updated=updated,
+        )
+        for name, href, link_type in sections
+    ]
     title = (
         "BookFlow"
         if profile is None
@@ -151,6 +136,7 @@ def _catalog_root(profile: str | None) -> Response:
         updated=updated,
         self_href=url_for(ep.root),
         links=links,
+        entries=entries,
     )
     return Response(data, content_type=NAVIGATION_TYPE)
 
@@ -305,11 +291,22 @@ def _folders_index(profile: str | None) -> Response:
         )
         for folder_id, name in folders
     ]
+    entries = [
+        nav_entry(
+            entry_id=f"tag:bookflow,folder,{folder_id}",
+            title=name,
+            href=url_for(ep.folder_level, folder_id=folder_id),
+            link_type=ACQUISITION_TYPE,
+            updated=updated,
+        )
+        for folder_id, name in folders
+    ]
     data = navigation_feed(
         title=f"BookFlow — {_prefix(profile)}Folders",
         updated=updated,
         self_href=url_for(ep.folders),
         links=links,
+        entries=entries,
     )
     return Response(data, content_type=NAVIGATION_TYPE)
 
@@ -359,18 +356,30 @@ def _folder_level(folder_id: int, profile: str | None) -> Response:
             )
         )
 
-    links = [
-        Link(
-            SUBSECTION_REL,
+    segment_hrefs = [
+        (
+            segment,
             url_for(
                 ep.folder_level,
                 folder_id=folder_id,
                 path=f"{path}/{segment}" if path else segment,
             ),
-            ACQUISITION_TYPE,
-            title=segment,
         )
         for segment in segments
+    ]
+    links = [
+        Link(SUBSECTION_REL, href, ACQUISITION_TYPE, title=segment)
+        for segment, href in segment_hrefs
+    ]
+    entries = [
+        nav_entry(
+            entry_id=f"tag:bookflow,folder,{folder_id},{path}/{segment}",
+            title=segment,
+            href=href,
+            link_type=ACQUISITION_TYPE,
+            updated=updated,
+        )
+        for segment, href in segment_hrefs
     ]
     label = folder.name if not path else f"{folder.name} / {path}"
     next_href = (
@@ -394,6 +403,7 @@ def _folder_level(folder_id: int, profile: str | None) -> Response:
         ),
         books=books,
         links=links,
+        entries=entries,
         next_href=next_href,
         profile=profile,
     )

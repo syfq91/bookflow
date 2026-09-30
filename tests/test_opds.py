@@ -30,6 +30,7 @@ ACQ = "application/atom+xml;profile=opds-catalog;kind=acquisition"
 ACQUISITION_REL = "http://opds-spec.org/acquisition"
 IMAGE_REL = "http://opds-spec.org/image"
 THUMB_REL = "http://opds-spec.org/image/thumbnail"
+SUBSECTION_REL = "subsection"
 
 
 def alembic_config(database_url: str) -> Config:
@@ -211,6 +212,21 @@ def test_root_feed_exposes_sections(client) -> None:
     assert "{searchTerms}" in search[0].get("href", "")
     self_link = by_rel["self"]
     assert self_link[0].get("type") == NAV
+    # Clients such as KOReader browse the root from entries alone, so every
+    # section must also be an entry and not just a feed-level link.
+    sections: dict[str, tuple[str, str]] = {}
+    for entry in _entries(feed):
+        links = _links_by_rel(_entry_links(entry)).get(SUBSECTION_REL, [])
+        title = entry.findtext("a:title", namespaces=NS) or ""
+        sections[title] = (links[0].get("href", ""), links[0].get("type", ""))
+    assert sections == {
+        "All Books": ("/opds/books", ACQ),
+        "Recent": ("/opds/recent", ACQ),
+        "Authors": ("/opds/authors", NAV),
+        "Folders": ("/opds/folders", NAV),
+        "X3 Catalog": ("/opds/x3", NAV),
+        "X4 Catalog": ("/opds/x4", NAV),
+    }
 
 
 def test_root_feed_bare_path_works(client) -> None:

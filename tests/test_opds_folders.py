@@ -119,6 +119,26 @@ def _subsection_titles(feed: ElementTree.Element) -> list[str]:
     return [link.get("title", "") for link in links]
 
 
+def _book_titles(feed: ElementTree.Element) -> list[str]:
+    """Titles of publication entries (subfolder entries excluded)."""
+    return [
+        entry.findtext("a:title", namespaces=NS)
+        for entry in _entries(feed)
+        if ACQUISITION_REL in _links_by_rel(_entry_links(entry))
+    ]
+
+
+def _nav_items(feed: ElementTree.Element) -> dict[str, str]:
+    """Section title → href for the navigation entries of a feed."""
+    items: dict[str, str] = {}
+    for entry in _entries(feed):
+        links = _links_by_rel(_entry_links(entry)).get(SUBSECTION_REL, [])
+        if links:
+            title = entry.findtext("a:title", namespaces=NS) or ""
+            items[title] = links[0].get("href", "")
+    return items
+
+
 def _scan(folder_id: int):
     return scan_folder(folder_id, EXTENSIONS)
 
@@ -189,7 +209,10 @@ def test_folders_index_lists_registered_folders(client, tmp_path: Path) -> None:
         "Beta": f"/opds/folders/{second}",
     }
     assert by_rel["self"][0].get("type") == NAV
-    assert _entries(feed) == []
+    assert _nav_items(feed) == {
+        "alpha": f"/opds/folders/{first}",
+        "Beta": f"/opds/folders/{second}",
+    }
 
 
 def test_folders_index_lists_folder_without_books(
@@ -197,12 +220,7 @@ def test_folders_index_lists_folder_without_books(
 ) -> None:
     feed = _parse(_get(client, "/opds/folders"))
 
-    assert _titles(feed) == []
-    hrefs = [
-        link.get("href")
-        for link in _links_by_rel(_feed_links(feed))[SUBSECTION_REL]
-    ]
-    assert hrefs == [f"/opds/folders/{folder_id}"]
+    assert _nav_items(feed) == {"books": f"/opds/folders/{folder_id}"}
 
 
 # --- folder levels ----------------------------------------------------------
@@ -226,8 +244,11 @@ def test_level_feed_lists_direct_books_and_subfolders(
     feed = _parse(_get(client, f"/opds/folders/{folder_id}"))
 
     assert feed.findtext("a:title", namespaces=NS) == "BookFlow — books"
-    assert _titles(feed) == ["Top Level"]
+    assert _book_titles(feed) == ["Top Level"]
     assert _subsection_titles(feed) == ["series"]
+    assert _nav_items(feed) == {
+        "series": f"/opds/folders/{folder_id}?path=series"
+    }
 
 
 def test_level_feed_drills_down(client, folder_id: int, root: Path) -> None:
@@ -235,12 +256,15 @@ def test_level_feed_drills_down(client, folder_id: int, root: Path) -> None:
 
     feed = _parse(_get(client, f"/opds/folders/{folder_id}?path=series"))
 
-    assert _titles(feed) == ["First", "Second"]
+    assert _book_titles(feed) == ["First", "Second"]
     links = _links_by_rel(_feed_links(feed))
     assert _subsection_titles(feed) == ["deeper"]
     assert links[SUBSECTION_REL][0].get("href") == (
         f"/opds/folders/{folder_id}?path=series/deeper"
     )
+    assert _nav_items(feed) == {
+        "deeper": f"/opds/folders/{folder_id}?path=series/deeper"
+    }
 
 
 def test_level_feed_leaf_has_no_subfolders(
@@ -253,6 +277,7 @@ def test_level_feed_leaf_has_no_subfolders(
     assert _titles(feed) == ["Hidden"]
     assert SUBSECTION_REL not in _links_by_rel(_feed_links(feed))
     assert "next" not in _links_by_rel(_feed_links(feed))
+    assert _nav_items(feed) == {}
 
 
 def test_level_feed_does_not_leak_sibling_directories(
@@ -263,7 +288,7 @@ def test_level_feed_does_not_leak_sibling_directories(
 
     feed = _parse(_get(client, f"/opds/folders/{folder_id}?path=series"))
 
-    assert _titles(feed) == ["First", "Second"]
+    assert _book_titles(feed) == ["First", "Second"]
     assert _subsection_titles(feed) == ["deeper"]
 
 
@@ -282,6 +307,7 @@ def test_subfolders_sort_case_insensitively(
     feed = _parse(_get(client, f"/opds/folders/{folder_id}"))
 
     assert _subsection_titles(feed) == ["alpha", "Beta", "gamma"]
+    assert list(_nav_items(feed)) == ["alpha", "Beta", "gamma"]
 
 
 def test_level_feed_paginates_books(client, folder_id: int) -> None:
@@ -344,7 +370,7 @@ def test_path_argument_ignores_empty_segments(
 
     feed = _parse(_get(client, f"/opds/folders/{folder_id}?path=/series//"))
 
-    assert _titles(feed) == ["First", "Second"]
+    assert _book_titles(feed) == ["First", "Second"]
 
 
 def test_folders_are_isolated_between_registered_folders(

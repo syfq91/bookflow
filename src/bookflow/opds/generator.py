@@ -85,11 +85,18 @@ def acquisition_feed(
     self_href: str,
     books: Sequence[Book],
     links: Sequence[Link] = (),
+    entries: Sequence[ElementTree.Element] = (),
     next_href: str | None = None,
     profile: str | None = None,
 ) -> bytes:
-    """Serialize an acquisition catalog feed."""
+    """Serialize an acquisition catalog feed.
+
+    ``entries`` carry navigation links (subfolder segments) and are emitted
+    before the book entries so directories sort ahead of publications.
+    """
     feed = _new_feed(title, updated, self_href, ACQUISITION_TYPE)
+    for entry in entries:
+        feed.append(entry)
     for book in books:
         feed.append(book_entry(book, profile))
     for link in links:
@@ -150,15 +157,41 @@ def _acquisition(book: Book, profile: str | None) -> tuple[str, str]:
     )
 
 
+def nav_entry(
+    *,
+    entry_id: str,
+    title: str,
+    href: str,
+    link_type: str,
+    updated: datetime | None,
+    summary: str | None = None,
+) -> ElementTree.Element:
+    """Build an Atom entry that points at another catalog feed.
+
+    Clients such as KOReader build their browse list from ``entry``
+    elements only, so every navigation section must be an entry and not
+    merely a feed-level ``rel="subsection"`` link.
+    """
+    entry = ElementTree.Element(f"{{{ATOM_NS}}}entry")
+    _add_text(entry, "id", entry_id)
+    _add_text(entry, "title", title)
+    _add_text(entry, "updated", _timestamp(updated))
+    if summary:
+        _add_text(entry, "summary", summary)
+    _add_link(entry, Link(SUBSECTION_REL, href, link_type))
+    return entry
+
+
 def author_entry(name: str, count: int, href: str, updated: datetime | None):
     """Build the Atom entry listing one author."""
-    entry = ElementTree.Element(f"{{{ATOM_NS}}}entry")
-    _add_text(entry, "id", f"tag:bookflow,author,{name}")
-    _add_text(entry, "title", name)
-    _add_text(entry, "updated", _timestamp(updated))
-    _add_text(entry, "summary", f"{count} book(s)")
-    _add_link(entry, Link(SUBSECTION_REL, href, ACQUISITION_TYPE))
-    return entry
+    return nav_entry(
+        entry_id=f"tag:bookflow,author,{name}",
+        title=name,
+        href=href,
+        link_type=ACQUISITION_TYPE,
+        updated=updated,
+        summary=f"{count} book(s)",
+    )
 
 
 def _new_feed(

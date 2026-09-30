@@ -119,6 +119,17 @@ def _section_titles(feed: ElementTree.Element) -> dict[str, str]:
     }
 
 
+def _entry_sections(feed: ElementTree.Element) -> dict[str, str]:
+    """Section title → href taken from the feed's navigation entries."""
+    sections: dict[str, str] = {}
+    for entry in _entries(feed):
+        links = _entry_links(entry).get(SUBSECTION_REL, [])
+        if links:
+            title = entry.findtext("a:title", namespaces=NS) or ""
+            sections[title] = links[0].get("href", "")
+    return sections
+
+
 def _scan(folder_id: int):
     return scan_folder(folder_id, EXTENSIONS)
 
@@ -161,7 +172,7 @@ def test_root_feed_links_device_catalogs(client, folder_id) -> None:
     }
     assert "/opds/x3" in hrefs
     assert "/opds/x4" in hrefs
-    assert hrefs["/opds/x3"].get("type") == ACQ
+    assert hrefs["/opds/x3"].get("type") == NAV
     assert hrefs["/opds/x3"].get("title") == "X3 Catalog"
     assert hrefs["/opds/x4"].get("title") == "X4 Catalog"
 
@@ -196,7 +207,7 @@ def test_device_root_has_same_sections_as_original(client, profile) -> None:
         ]
         assert len(search) == 1
         assert "{searchTerms}" in search[0].get("href", "")
-    assert _entries(feed) == []
+        assert _entry_sections(source) == _section_titles(source)
 
 
 @pytest.mark.parametrize("profile", ["x3", "x4"])
