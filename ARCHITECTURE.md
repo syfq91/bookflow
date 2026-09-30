@@ -478,7 +478,7 @@ threads (`check_same_thread=False` + WAL-free default journal).
 
 ```bash
 uv sync                                # install (incl. gunicorn)
-uv run flask --app bookflow.app run    # dev server
+uv run flask --app bookflow.app run --port 8000   # dev server
 uv run alembic upgrade head            # migrations
 uv run ruff check .                    # lint
 uv run pytest -q                       # tests
@@ -490,8 +490,9 @@ needs write access. The cache directory is disposable: clearing it (UI
 button or `rm -rf`) costs only regeneration time on the next device
 download.
 
-For containers, `Dockerfile` + `docker-compose.yml` run the same stack:
-two-stage build (uv sync → slim runtime, non-root user), a read-only
+For containers, `Dockerfile` + `docker-compose.yml` run the same stack,
+either from the published `ghcr.io/syfq91/bookflow:latest` image or a
+local two-stage build (uv sync → slim runtime, non-root user): a read-only
 library bind mount at `/library` (`./library` by default), a named volume
 for `/app/data`, automatic `alembic upgrade head` at start, and a
 `/healthz` healthcheck. Settings are literals in `docker-compose.yml` —

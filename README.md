@@ -11,7 +11,14 @@ reading-position sync.
 
 1. Edit `docker-compose.yml`: set `OPDS_ADMIN_PASSWORD` and point the
    library bind at your books.
-2. Start it:
+2. Start it — either pull the prebuilt image:
+
+   ```bash
+   docker pull ghcr.io/syfq91/bookflow:latest
+   docker compose up -d
+   ```
+
+   or build it locally:
 
    ```bash
    docker compose up -d --build
@@ -31,10 +38,10 @@ Requires [uv](https://docs.astral.sh/uv/); Python 3.14+ is managed by uv.
 ```bash
 uv sync
 uv run alembic upgrade head
-uv run flask --app bookflow.app run
+uv run flask --app bookflow.app run --port 8000
 ```
 
-Open <http://127.0.0.1:5000/> — it redirects to the admin dashboard.
+Open <http://127.0.0.1:8000/> — it redirects to the admin dashboard.
 
 ## Using BookFlow
 

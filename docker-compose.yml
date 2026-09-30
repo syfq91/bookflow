@@ -3,7 +3,8 @@ name: bookflow
 services:
   bookflow:
     build: .
-    image: bookflow:latest
+    # Prebuilt image; `--build` rebuilds locally and re-tags it.
+    image: ghcr.io/syfq91/bookflow:latest
     container_name: bookflow
     # Host bind/port: localhost only. Use "0.0.0.0:8000:8000" for LAN.
     ports:

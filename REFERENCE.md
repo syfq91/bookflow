@@ -102,11 +102,12 @@ the next X3/X4 download regenerates the EPUB on demand.
 Run the development server:
 
 ```bash
-uv run flask --app bookflow.app run
+uv run flask --app bookflow.app run --port 8000
 ```
 
-Then open `http://127.0.0.1:5000/`, which redirects to the admin dashboard
-(`/admin/`); the OPDS catalog is at `/opds`.
+Then open `http://127.0.0.1:8000/`, which redirects to the admin dashboard
+(`/admin/`); the OPDS catalog is at `/opds`. Flask's own default is 5000
+and it ignores `OPDS_PORT`, hence the explicit `--port`.
 
 Apply database migrations:
 
@@ -143,6 +144,15 @@ access. The cache directory is disposable: clearing it costs only
 regeneration time on the next device download.
 
 ## Docker
+
+A prebuilt image is published to GHCR:
+
+```bash
+docker pull ghcr.io/syfq91/bookflow:latest
+docker compose up -d
+```
+
+To build from source instead (the `Dockerfile` at the repo root):
 
 ```bash
 docker compose up -d --build

@@ -19,11 +19,12 @@ uv sync                                   # install deps
 uv run ruff check .                       # lint (gate before every commit)
 uv run pytest -q                          # full suite: 239 tests, ~2-3 min
 uv run pytest -q tests/test_opds.py       # single file (seconds)
-uv run flask --app bookflow.app run       # dev server on :8000
+uv run flask --app bookflow.app run --port 8000  # dev server (flask defaults to :5000)
 uv run alembic upgrade head               # apply migrations
 uv run alembic revision --autogenerate -m "..."
 uv run gunicorn --bind 0.0.0.0:8000 bookflow.app:app
 docker compose up -d --build          # containerized run (Dockerfile)
+# prebuilt image: docker pull ghcr.io/syfq91/bookflow:latest && docker compose up -d
 ```
 
 Verify before committing: `uv run ruff check . && uv run pytest -q`.
