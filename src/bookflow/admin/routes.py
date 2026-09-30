@@ -12,6 +12,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    send_file,
     url_for,
 )
 from sqlalchemy import func, select
@@ -24,6 +25,7 @@ from bookflow.database.database import session_scope
 from bookflow.database.models import Book, LibraryFolder, OptimizedBook
 from bookflow.health import HealthCheck, library_statistics, run_checks
 from bookflow.library.browse import BrowseResult, browse_directory
+from bookflow.library.paths import book_file
 from bookflow.library.scanner import ScanInProgress, ScanResult, scan_folder
 from bookflow.library.service import (
     add_folder,
@@ -31,6 +33,7 @@ from bookflow.library.service import (
     list_folders,
     remove_folder,
 )
+from bookflow.opds.generator import book_mime_type
 from bookflow.optimizer.service import clear_optimized_cache
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
@@ -136,6 +139,83 @@ def folder_delete(folder_id: int):
     return redirect(url_for("admin.folders"))
 
 
+@bp.get("/library")
+@login_required
+def library_index():
+    """List the registered folders — the roots of the library tree."""
+    return render_template(
+        "library.html", folder=None, path="", folders=list_folders()
+    )
+
+
+@bp.get("/library/<int:folder_id>")
+@login_required
+def library_tree(folder_id: int):
+    """Show one directory level of a registered folder, from the index."""
+    folder = get_folder(folder_id)
+    if folder is None:
+        abort(404)
+    path = _clean_relative_path(request.args.get("path", ""))
+    prefix = f"{path}/" if path else ""
+
+    dirs: set[str] = set()
+    books: list[dict[str, object]] = []
+    with session_scope() as session:
+        rows = session.scalars(
+            select(Book).where(
+                Book.folder_id == folder_id,
+                Book.relative_path.startswith(prefix, autoescape=True),
+            )
+        ).all()
+        for book in rows:
+            rest = book.relative_path[len(prefix) :]
+            if "/" in rest:
+                dirs.add(rest.split("/", 1)[0])
+            else:
+                books.append(
+                    {
+                        "id": book.id,
+                        "name": book.relative_path,
+                        "title": book.title,
+                        "format": book.file_format,
+                        "size": book.file_size,
+                    }
+                )
+
+    crumbs: list[tuple[str, str]] = [(folder["name"], "")]
+    walked = ""
+    for part in path.split("/") if path else []:
+        walked = f"{walked}/{part}" if walked else part
+        crumbs.append((part, walked))
+
+    return render_template(
+        "library.html",
+        folder=folder,
+        path=path,
+        crumbs=crumbs,
+        parent=path.rsplit("/", 1)[0] if path else None,
+        dirs=[
+            (name, f"{path}/{name}" if path else name)
+            for name in sorted(dirs, key=str.casefold)
+        ],
+        books=sorted(books, key=lambda item: str(item["name"]).casefold()),
+        folders=None,
+    )
+
+
+@bp.get("/books/<int:book_id>/download")
+@login_required
+def book_download(book_id: int):
+    target = book_file(book_id)
+    return send_file(
+        target,
+        mimetype=book_mime_type(target.name),
+        as_attachment=True,
+        download_name=target.name,
+        conditional=True,
+    )
+
+
 @bp.post("/cache/clear")
 @login_required
 def cache_clear():
@@ -161,6 +241,22 @@ def health():
 
 def _folders_response():
     return render_template("folders.html", folders=list_folders())
+
+
+def _clean_relative_path(raw: str) -> str:
+    """Validate a tree path from the query string; refuse anything odd."""
+    value = raw or ""
+    if not value:
+        return ""
+    parts = value.split("/")
+    if (
+        value.startswith("/")
+        or "\\" in value
+        or "\x00" in value
+        or any(part in ("", ".", "..") for part in parts)
+    ):
+        abort(400, description="Invalid folder path.")
+    return "/".join(parts)
 
 
 def _browse_conflicts(result: BrowseResult, registered: list[str]) -> set[str]:

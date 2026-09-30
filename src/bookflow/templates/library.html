@@ -1,0 +1,104 @@
+{% extends "layout.html" %}
+
+{% block title %}Library · BookFlow{% endblock %}
+
+{% block content %}
+<section class="card">
+  {% if folder is none %}
+  <div class="page-head">
+    <h1>Library</h1>
+  </div>
+  <p class="muted">
+    Registered folders. Click a folder to browse it; click a file to
+    download it.
+  </p>
+  {% if folders %}
+  <ul class="browse-list">
+    {% for item in folders %}
+    <li class="browse-row">
+      <a
+        class="browse-name"
+        href="{{ url_for('admin.library_tree', folder_id=item.id) }}"
+        >{{ item.name }}</a
+      >
+      <span class="path">{{ item.path }}</span>
+      <span class="muted"
+        >{{ item.books }} book{% if item.books != 1 %}s{% endif %}</span
+      >
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted">No library folders yet.</p>
+  <p><a href="{{ url_for('admin.folders') }}">Add a folder</a> to start browsing.</p>
+  {% endif %}
+
+  {% else %}
+  <nav class="browse-crumb" aria-label="Breadcrumb">
+    {% for label, crumb_path in crumbs %}
+    {% if loop.last %}
+    <span aria-current="page">{{ label }}</span>
+    {% else %}
+    <a
+      href="{{ url_for('admin.library_tree', folder_id=folder.id, path=crumb_path) }}"
+      >{{ label }}</a
+    >
+    <span class="browse-sep" aria-hidden="true">/</span>
+    {% endif %}
+    {% endfor %}
+  </nav>
+  <p class="path">{{ folder.path }}{% if path %}/{{ path }}{% endif %}</p>
+  <p class="browse-up">
+    {% if parent is not none %}
+    <a
+      href="{{ url_for('admin.library_tree', folder_id=folder.id, path=parent) }}"
+      >&uarr; Up</a
+    >
+    {% else %}
+    <a href="{{ url_for('admin.library_index') }}">&uarr; Up</a>
+    {% endif %}
+  </p>
+
+  {% if dirs %}
+  <h2>Folders</h2>
+  <ul class="browse-list">
+    {% for name, child in dirs %}
+    <li class="browse-row">
+      <a
+        class="browse-name"
+        href="{{ url_for('admin.library_tree', folder_id=folder.id, path=child) }}"
+        >{{ name }}</a
+      >
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if books %}
+  <h2>Files</h2>
+  <ul class="browse-list">
+    {% for book in books %}
+    <li class="browse-row">
+      <a
+        class="browse-name"
+        href="{{ url_for('admin.book_download', book_id=book.id) }}"
+        >{{ book.name }}</a
+      >
+      {% if book.title and book.title != book.name %}
+      <span class="muted">{{ book.title }}</span>
+      {% endif %} {% if book.format %}
+      <span class="badge badge-ok">{{ book.format }}</span>
+      {% endif %} {% if book.size %}
+      <span class="muted">{{ book.size|filesizeformat }}</span>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if not dirs and not books %}
+  <p class="muted">Empty folder.</p>
+  {% endif %}
+  {% endif %}
+</section>
+{% endblock %}

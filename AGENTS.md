@@ -16,7 +16,7 @@ than greenfield work.
 ```bash
 uv sync                                   # install deps
 uv run ruff check .                       # lint (gate before every commit)
-uv run pytest -q                          # full suite: 219 tests, ~2-3 min
+uv run pytest -q                          # full suite: 239 tests, ~2-3 min
 uv run pytest -q tests/test_opds.py       # single file (seconds)
 uv run flask --app bookflow.app run       # dev server on :8000
 uv run alembic upgrade head               # apply migrations
@@ -86,8 +86,8 @@ pkill -f "[f]lask --app bookflow.app run"
 2. **Optimization is on-demand only.** epubkit runs exclusively inside
    `optimize_book()`, reached only from `/opds/x3|/x4/download/<id>`.
    Never call it from scanning, startup, routes, or background tasks.
-3. **Paths come from the DB, not the URL.** `_book_file()` in
-   `opds/routes.py` is the single source of book paths and enforces
+3. **Paths come from the DB, not the URL.** `book_file()` in
+   `library/paths.py` is the single source of book paths and enforces
    root containment via `resolve()` + `is_relative_to`. Don't construct
    filesystem paths from user input anywhere else.
 4. **Cache is disposable, index must agree.** Cache files live at

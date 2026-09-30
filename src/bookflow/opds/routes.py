@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
 
 from flask import (
@@ -20,6 +19,7 @@ from sqlalchemy.exc import OperationalError
 from bookflow.database.database import session_scope
 from bookflow.database.models import Book
 from bookflow.library.metadata import extract_cover
+from bookflow.library.paths import book_file
 from bookflow.opds.auth import (
     AUTH_DOCUMENT_TYPE,
     authenticate,
@@ -344,7 +344,7 @@ def _book_feed(book_id: int, profile: str | None):
 
 @bp.get("/download/<int:book_id>")
 def download(book_id: int):
-    target = _book_file(book_id)
+    target = book_file(book_id)
     return send_file(
         target,
         mimetype=book_mime_type(target.name),
@@ -356,7 +356,7 @@ def download(book_id: int):
 
 @bp.get("/cover/<int:book_id>")
 def cover(book_id: int):
-    target = _book_file(book_id)
+    target = book_file(book_id)
     if target.suffix.lower() != ".epub":
         abort(404)
     extracted = extract_cover(target)
@@ -425,23 +425,8 @@ def _page_of_books(session, offset: int, condition=None):
     return list(session.scalars(statement.offset(offset).limit(PAGE_SIZE)))
 
 
-def _book_file(book_id: int) -> Path:
-    """Return the on-disk book file, refusing paths outside the folder root."""
-    with session_scope() as session:
-        book = session.get(Book, book_id)
-        if book is None:
-            abort(404)
-        folder_path = Path(book.folder.path)
-        relative_path = book.relative_path
-    root = folder_path.resolve()
-    target = (folder_path / relative_path).resolve()
-    if not target.is_relative_to(root) or not target.is_file():
-        abort(404)
-    return target
-
-
 def _optimized_download(book_id: int, profile: str) -> Response:
-    source = _book_file(book_id)
+    source = book_file(book_id)
     if source.suffix.lower() != ".epub":
         abort(404)
     try:

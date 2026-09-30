@@ -47,6 +47,10 @@ cache sizes and health badges. `/admin/health` runs per-component checks
 statistics: books by format, books per folder, progression and known
 devices, cache contents, and scanner status with the last successful scan.
 
+**Library** (`/admin/library`) is a plain FTP-style browser over the index:
+click down through folder levels, then click a file to download the
+original. Nothing is ever written to the library.
+
 ## Library folders
 
 Register an absolute folder path under **Folders → Add Folder**. Type the

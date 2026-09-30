@@ -84,11 +84,13 @@ bookflow/
 │   │   └── decorators.py         @login_required
 │   │
 │   ├── admin/                    operational UI (no file management)
-│   │   └── routes.py             dashboard, folders, scan, cache clear, health
+│   │   └── routes.py             dashboard, folders, library browser,
+│   │                             scan, download, cache clear, health
 │   │
 │   ├── library/                  filesystem → index
 │   │   ├── service.py            register/list/remove folders
 │   │   ├── browse.py             clamped directory listing for the picker
+│   │   ├── paths.py              book_file(): the single source of book paths
 │   │   ├── scanner.py            walk, reconcile, scan statistics
 │   │   └── metadata.py           EPUB/PDF metadata + on-demand cover
 │   │
@@ -107,10 +109,11 @@ bookflow/
 │   │   └── service.py            component checks + library statistics
 │   │
 │   ├── templates/                layout, login, dashboard, folders,
-│   │                             add_folder, browse_folders, health
+│   │                             add_folder, browse_folders, library,
+│   │                             health
 │   └── static/style.css
 │
-└── tests/                        219 tests (see §11)
+└── tests/                        239 tests (see §11)
 ```
 
 Deliberate deviations from the originally sketched layout: every ORM model
@@ -228,6 +231,9 @@ directory itself is treated as rebuildable.
   `resolve()` + `is_relative_to()`, directories only, capped at 500
   entries. Selection just prefills the add-folder form; registration
   still goes through `add_folder()`.
+- `paths.book_file(book_id)` turns a book row into an on-disk path:
+  root containment via `resolve()` + `is_relative_to()`, `404` on
+  anything outside the root. Shared by the OPDS and admin blueprints.
 - `scanner.scan_folder(folder_id, extensions)`:
   - a per-folder `threading.Lock` makes concurrent scans of the same folder
     fail fast with `ScanInProgress` → HTTP `409`;
@@ -254,10 +260,9 @@ directory itself is treated as rebuildable.
 - `routes.py` — all catalog endpoints (table in §8). Shared helpers:
   - `before_request` applies HTTP Basic to everything under `/opds` except
     the public `/opds/authentication` document;
-  - `_book_file(book_id)` is the **only** function that turns a book row
-    into a path: it resolves the folder root and target and refuses
-    anything outside the root (`404`), so URL input can never escape the
-    library;
+  - book paths come from `library.paths.book_file()` (§7.2) — the **only**
+    function that turns a book row into a path, so URL input can never
+    escape the library;
   - blueprint-scoped `@bp.errorhandler(404/403/500)` render XML errors —
     scoped to the blueprint so admin pages keep Flask's HTML error pages;
   - pagination: 50 entries per page with a `rel="next"` link.
@@ -328,7 +333,10 @@ directory itself is treated as rebuildable.
   without a valid CSRF token (`400`) *before* views run.
 - Views: dashboard (`_dashboard_stats()` + health badges, degrades to a
   readable message when migrations are missing), folder CRUD + scan,
-  `POST /admin/cache/clear` (flash + redirect), `/admin/health`.
+  the FTP-style library browser (`/admin/library` roots → per-folder
+  directory levels from the index, files link to an original-file
+  download), `POST /admin/cache/clear` (flash + redirect),
+  `/admin/health`.
 - There is deliberately **no** upload, delete, rename, move, or metadata
   editing — the UI is a control surface, not a file manager.
 
@@ -349,6 +357,9 @@ directory itself is treated as rebuildable.
 | POST | `/admin/folders/<id>/scan` | re-scan (`409` if running) |
 | POST | `/admin/folders/<id>/delete` | drops index rows only |
 | POST | `/admin/cache/clear` | §28 optimization-cache reset |
+| GET | `/admin/library` | library browser: registered folders (roots) |
+| GET | `/admin/library/<id>` | one directory level (`?path=` relative, from the index) |
+| GET | `/admin/books/<id>/download` | original file, `404` outside root |
 | GET | `/admin/health` | component checks + statistics |
 
 All `/admin/*` (except login) require the session cookie.
@@ -382,7 +393,7 @@ GET /opds/books  →  before_request: Basic auth (401 → auth document)
 
 ```text
 GET /opds/x4/download/12
-  → auth → _book_file(12)            (DB lookup + root-resolve guard)
+  → auth → book_file(12)             (DB lookup + root-resolve guard)
   → suffix must be .epub             (else 404)
   → optimize_book(12, "x4", src)
        lock(12, x4)
@@ -446,7 +457,7 @@ threads (`check_same_thread=False` + WAL-free default journal).
 
 ## 11. Testing
 
-`tests/` (219 tests, `uv run pytest`):
+`tests/` (239 tests, `uv run pytest`):
 
 - `conftest.py` — temp `Settings` (fresh data dir + SQLite per test) and a
   bare app fixture; every suite that needs migrations shadows these with an
