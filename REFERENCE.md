@@ -87,7 +87,7 @@ A `401` returns the OPDS Authentication Document
 | `/opds/x4/books`, `/opds/x4/recent`, `/opds/x4/authors`, `/opds/x4/search`, `/opds/x4/folders`, `/opds/x4/folders/<id>?path=…` | The X3 URLs above with X4 acquisitions |
 | `/opds/x4/books/<id>` | Single-book feed in the X4 catalog                    |
 | `/opds/x4/download/<id>` | EPUB optimized for the Xteink X4 (on demand, cached) |
-| `/opds/publications/<id>/progression` | Reading position per OPDS Progression 1.0: `GET` reads, `PUT` updates (`application/opds-progression+json`); conflicts are `409` problem details |
+| `/opds/publications/<id>/progression` | Reading position per OPDS Progression 1.0: `GET` reads, `PUT` updates (`application/opds-progression+json`); conflicts are `409` problem details — full client docs below |
 
 The X3/X4 catalogs contain the full library and mirror the original
 catalog's structure section for section, so a client pointed at `/opds`,
@@ -107,6 +107,71 @@ under `data/cache/optimized/{x3,x4}/` and rebuilt automatically when the
 source file changes. The original library files are never modified. The
 dashboard's **Clear cache** action empties the cache and its index rows;
 the next X3/X4 download regenerates the EPUB on demand.
+
+### Reading progression (OPDS Progression 1.0)
+
+Reading positions sync through OPDS Progression 1.0 at
+`/opds/publications/<id>/progression`. There is exactly **one position per
+logical book**, shared by the original file and that book's X3/X4 downloads;
+the optimization profile never affects it.
+
+**Discovery.** Every acquisition entry links to its own position with
+`rel="http://opds-spec.org/progression"` and
+`type="application/opds-progression+json"` — follow that link instead of
+building the URL from the book id.
+
+**Authentication.** The same HTTP Basic credentials as the catalog; a `401`
+body is the OPDS Authentication Document (`application/opds-authentication+json`),
+also served at `/opds/authentication`. While `OPDS_ADMIN_PASSWORD` is unset
+both methods answer `503`.
+
+**Request document** (`Content-Type: application/opds-progression+json`):
+
+| Field | Required | Notes |
+| ----- | -------- | ----- |
+| `modified` | yes | ISO 8601 timestamp of when the client saved this position; a value without an offset is read as UTC |
+| `progression` | yes | number in `0.0`–`1.0`, the fraction read through the publication |
+| `device.id` | yes | non-empty string naming the device — a `urn:uuid:…` is a good choice |
+| `device.name` | yes | non-empty display name |
+| `title` | no | current position label, e.g. the chapter title |
+| `references` | no | array of strings, e.g. the content document being read |
+
+```json
+{
+  "modified": "2026-01-27T11:00:00Z",
+  "progression": 0.0174,
+  "device": {"id": "urn:uuid:019c0047-cc8d-7ec4-a3c3-938ccadc020a", "name": "Reader"},
+  "title": "Chapter 1 - A New Dawn",
+  "references": ["chapter1.html"]
+}
+```
+
+**GET** → `200` with the stored document, or an **empty body** with the same
+media type when the book has no position yet (treat it as "nothing saved").
+A book that is not in the index is `404`.
+
+**PUT** responses — the body of a `200`/`201` is the stored document:
+
+| Status | Meaning |
+| ------ | ------- |
+| `201` | position created |
+| `200` | position updated, or the same `modified` replayed (idempotent) |
+| `400` | wrong media type, invalid JSON, or a field missing / out of range |
+| `404` | no such book |
+| `409` | this `modified` is **older** than the stored one — the newer position wins |
+
+Errors are RFC 7807 documents (`application/problem+json`) carrying `type`
+and `title`, with `type` one of
+`https://registry.opds.io/error#progression-invalid-payload` (400),
+`https://registry.opds.io/error#progression-date` (409) or `about:blank`
+(404).
+
+**Conflict handling for clients.** Send `modified` from your own clock and
+keep the `modified` returned by the server for the next write. An
+out-of-order update from a second device gets `409` instead of clobbering
+the newest position — on `409`, GET the current document and retry with the
+newer timestamp. Timestamps are echoed with `Z` and microsecond precision,
+so replaying a document unchanged stays `200`.
 
 ## Development
 

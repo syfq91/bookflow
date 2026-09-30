@@ -72,8 +72,10 @@ directory layout), and search. The X3/X4 device catalogs (`/opds/x3`,
 `/opds/x4`) offer exactly the same sections — only their EPUB downloads are
 optimized on demand and cached; other formats fall back to the original
 file. Reading positions sync via OPDS Progression
-(`/opds/publications/<id>/progression`). The full endpoint list is in
-[REFERENCE.md](REFERENCE.md#opds-catalog).
+(`/opds/publications/<id>/progression`) — the
+[endpoint table](REFERENCE.md#opds-catalog) and a
+[progression guide for client authors](REFERENCE.md#reading-progression-opds-progression-10)
+(document schema, status codes, conflict rules) are in REFERENCE.md.
 
 **Check status** — the dashboard shows books, folders, library size, last
 scan, cache sizes and health badges; `/admin/health` runs per-component
