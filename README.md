@@ -58,11 +58,21 @@ drop out of the index. Nothing is ever uploaded, renamed or modified.
 folder name opens an FTP-style browser over the index. Click down through
 folder levels, then click a file to download the original.
 
-**Read from a client** — point any OPDS client at `/opds` with the admin
-credentials. Feeds cover all books, recent additions, authors and search,
-plus X3/X4 device catalogs whose EPUB downloads are optimized on demand
+**Read from a client** — point any OPDS client at the root feed:
+
+```
+http://127.0.0.1:8000/opds
+```
+
+(that's the host/port you opened the admin UI on, plus `/opds`; Docker and
+bare metal both default to `8000`). Authenticate with the admin
+credentials. Feeds cover all books (`/opds/books`), recent additions
+(`/opds/recent`), authors and search, plus X3/X4 device catalogs
+(`/opds/x3`, `/opds/x4`) whose EPUB downloads are optimized on demand
 and cached; other formats fall back to the original file. Reading
-positions sync via OPDS Progression.
+positions sync via OPDS Progression
+(`/opds/publications/<id>/progression`). The full endpoint list is in
+[REFERENCE.md](REFERENCE.md#opds-catalog).
 
 **Check status** — the dashboard shows books, folders, library size, last
 scan, cache sizes and health badges; `/admin/health` runs per-component
