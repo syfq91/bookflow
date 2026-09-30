@@ -247,7 +247,6 @@ def test_dashboard_shows_cache_sizes_and_health(
                 profile="x3",
                 source_mtime=1,
                 source_size=100,
-                optimized_path="/cache/1.epub",
                 optimized_size=1234,
             )
         )

@@ -158,5 +158,4 @@ def _record(
             session.add(row)
         row.source_mtime = source_mtime
         row.source_size = source_size
-        row.optimized_path = str(cache_file)
         row.optimized_size = cache_file.stat().st_size

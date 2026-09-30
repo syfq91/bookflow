@@ -641,7 +641,6 @@ def unknown_path(unknown: str):
 
 
 @bp.errorhandler(404)
-@bp.errorhandler(403)
 @bp.errorhandler(500)
 def _catalog_error(error):
     description = getattr(error, "description", None) or "Request failed"

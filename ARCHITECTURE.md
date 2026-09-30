@@ -153,7 +153,6 @@ environment variable with a default (see `.env.example`):
 
 | Variable | Default | Notes |
 | -------- | ------- | ----- |
-| `OPDS_HOST` / `OPDS_PORT` | `0.0.0.0` / `8000` | bind address |
 | `OPDS_DATA_DIR` | `./data` | SQLite + cache root (only writable dir) |
 | `OPDS_DATABASE_URL` | derived from data dir | override for tests/production |
 | `OPDS_SESSION_SECRET` | *(auto-generated)* | unset → random secret persisted to `data/.session_secret` (0600), shared by all workers |
@@ -179,13 +178,13 @@ the env value is Argon2id-hashed in memory at startup.
 - Schema changes go through Alembic (`migrations/versions/`); models are
   verified against migrations in `tests/test_database.py`.
 
-### Schema (migration `0001_initial_schema`)
+### Schema (migrations `0001`, `0002`)
 
 ```text
 library_folders                     books
 ├── id (PK)                         ├── id (PK)
 ├── path (unique, 4096)             ├── folder_id (FK → library_folders, CASCADE)
-├── name, enabled                   ├── relative_path (unique per folder)
+├── name                             ├── relative_path (unique per folder)
 ├── created_at, updated_at          ├── title, authors, publisher, language,
 └── last_scan_at/duration/…           isbn, description, series, series_index
                                     ├── file_format, file_size, file_modified_at
@@ -196,7 +195,7 @@ progressions (1:1 with books)       └── created_at, updated_at
 ├── device_id, device_name          ├── book_id (FK, CASCADE)
 ├── title, references (JSON)        ├── profile ('x3' | 'x4')
 └── created_at, updated_at          ├── source_mtime, source_size   ← validity
-                                    ├── optimized_path, optimized_size
+                                    ├── optimized_size
                                     └── UNIQUE (book_id, profile)
 ```
 

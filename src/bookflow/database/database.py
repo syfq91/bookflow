@@ -42,12 +42,6 @@ def init_engine(settings: Settings) -> Engine:
     return _engine
 
 
-def get_engine_instance() -> Engine:
-    if _engine is None:
-        raise RuntimeError("Database engine is not initialized")
-    return _engine
-
-
 def reset_engine() -> None:
     """Drop the process-wide engine (used by tests)."""
     global _engine, _session_factory

@@ -98,7 +98,6 @@ def test_add_folder_registers(db, tmp_path: Path) -> None:
     assert result.name == "library"
     with session_scope() as session:
         folder = session.query(LibraryFolder).one()
-        assert folder.enabled is True
         assert folder.last_scan_at is None
 
 

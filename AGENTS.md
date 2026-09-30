@@ -38,8 +38,7 @@ scratch data dir:
 
 ```bash
 export OPDS_DATA_DIR=/tmp/bf-smoke OPDS_ADMIN_PASSWORD=smokepass \
-       OPDS_DATABASE_URL="sqlite+pysqlite:////tmp/bf-smoke/live.db" \
-       OPDS_PORT=8767
+       OPDS_DATABASE_URL="sqlite+pysqlite:////tmp/bf-smoke/live.db"
 setsid nohup uv run flask --app bookflow.app run --host 127.0.0.1 --port 8767 \
   > /tmp/bf-smoke.log 2>&1 < /dev/null &
 # kill later with the regex-bracket trick (plain pkill kills your own shell line):

@@ -18,6 +18,7 @@ services:
       # OPDS_SESSION_SECRET: change-me   # empty → generated on first start
       # OPDS_SESSION_COOKIE_SECURE: "false"   # "true" behind HTTPS
       # OPDS_SCAN_EXTENSIONS: .epub,.pdf,.cbz,.cbr,.mobi,.azw3
+      # OPDS_BROWSE_ROOT: /              # clamp for the admin folder browser
       # GUNICORN_WORKERS: "2"
     volumes:
       - bookflow-data:/app/data

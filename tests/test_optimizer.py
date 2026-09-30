@@ -183,7 +183,6 @@ def test_download_populates_cache_and_index(
     assert row.profile == "x4"
     assert row.source_mtime is not None and row.source_mtime > 0
     assert row.source_size == source.stat().st_size
-    assert row.optimized_path == str(cache_file)
     assert row.optimized_size == cache_file.stat().st_size
 
 

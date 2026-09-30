@@ -12,42 +12,21 @@ by reading the cited code, not just grepping.
 
 ## 1. Dead code / inert configuration
 
-- [ ] **`Settings.host` / `Settings.port` never bind anything**
-      `src/bookflow/config.py:48-49,80-81`. gunicorn, `flask run` and
-      `docker-compose.yml` all hardcode 8000; the only readers are the
-      round-trip assertions in `tests/test_config.py:31,47`. Documented as
-      functional in `REFERENCE.md:13-14`, `.env.example:11-12`,
-      `ARCHITECTURE.md:156`. Either wire them into an entrypoint or drop
-      the fields, the env vars and the docs.
-- [ ] **`get_engine_instance()` has zero callers**
-      `src/bookflow/database/database.py:45-48` — one hit repo-wide (the
-      `def` itself). Its siblings (`get_engine`, `init_engine`,
-      `reset_engine`, `session_scope`) are all used.
-- [ ] **`LibraryFolder.enabled` is write-only**
-      `src/bookflow/database/models.py:35`. No query filters on it, no
-      route toggles it, no template shows it; only
-      `tests/test_library.py:101` asserts it. Implies an enable/disable
-      feature that does not exist.
-- [ ] **`OptimizedBook.optimized_path` written, never read**
-      `src/bookflow/database/models.py:140`, written at
-      `src/bookflow/optimizer/service.py:161`. `_cache_is_valid()`
-      (`service.py:104-109`) validates against mtime/size only and the
-      path is re-derived from `book_id`+`profile` by `_cache_file()`
-      (`service.py:78-83`). Goes stale if `OPDS_DATA_DIR` moves.
-- [ ] **Dead `@bp.errorhandler(403)`** `src/bookflow/opds/routes.py:395`
-      — no `abort(403)` anywhere in `src/`. Either implement 403
-      responses or delete (see §2.5 for the wider error-handler gap).
-- [ ] **`pytest-cov` declared but never invoked**
-      `pyproject.toml:22`; no CI workflow, no `--cov`, no
-      `[tool.coverage]` config. Only trace is a gitignored `.coverage`
-      artifact. Confirm it is wanted before removing.
-- [ ] **Docs do not match the code**
-      - `.env.example` omits `OPDS_DATABASE_URL` (read at
-        `config.py:75`) although `REFERENCE.md:24` claims parity.
-      - `.env.example:6` points at README for "every setting"; the table
-        is in `REFERENCE.md:11-22`.
-      - `REFERENCE.md:174` says every other setting is commented out in
-        `docker-compose.yml`; `OPDS_BROWSE_ROOT` is not there at all.
+All seven findings **resolved (2026-09-30)** — nothing here is open:
+
+- `Settings.host` / `Settings.port` and the `OPDS_HOST` / `OPDS_PORT` env
+  vars removed; nothing ever bound them. The bind address is set by the
+  entrypoint instead: `--port` for `flask run`, `--bind 0.0.0.0:8000` in
+  the Dockerfile, `ports:` in `docker-compose.yml`.
+- `get_engine_instance()` deleted (zero callers).
+- `LibraryFolder.enabled` and `OptimizedBook.optimized_path` dropped from
+  the models, the writes and the tests, plus migration `0002` (both
+  directions verified).
+- Dead `@bp.errorhandler(403)` deleted — no `abort(403)` exists in `src/`.
+- `pytest-cov` removed from the dev group; `uv.lock` re-synced.
+- Docs: `.env.example` now documents `OPDS_DATABASE_URL` and points at
+  `REFERENCE.md` (not `README.md`) for the setting table;
+  `docker-compose.yml` lists the commented `OPDS_BROWSE_ROOT`.
 
 Checked and **not** dead (do not "clean up"): all route handlers (some
 reached via dynamic `url_for`), all templates and `static/style.css`
@@ -289,4 +268,4 @@ reached via dynamic `url_for`), all templates and `static/style.css`
    flash, stats fallback, `get_folder`) — safe as small separate commits.
 5. **§3 cache hygiene + security items** (`change-me` password, proxy-
    aware limiter).
-6. **§1 dead code, §3 logging, §5 typing** — good first-issue batch.
+6. **§3 logging, §5 typing** — good first-issue batch.

@@ -7,7 +7,6 @@ from datetime import datetime
 from sqlalchemy import (
     JSON,
     BigInteger,
-    Boolean,
     DateTime,
     Float,
     ForeignKey,
@@ -32,7 +31,6 @@ class LibraryFolder(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     path: Mapped[str] = mapped_column(String(4096), nullable=False, unique=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
@@ -137,7 +135,6 @@ class OptimizedBook(Base):
     source_mtime: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     source_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
-    optimized_path: Mapped[str | None] = mapped_column(String(4096), nullable=True)
     optimized_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(

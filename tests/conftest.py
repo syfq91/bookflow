@@ -18,8 +18,6 @@ from bookflow.database.database import reset_engine  # noqa: E402
 @pytest.fixture
 def settings(tmp_path: Path) -> Settings:
     return Settings(
-        host="127.0.0.1",
-        port=8000,
         data_dir=tmp_path / "data",
         database_url=f"sqlite+pysqlite:///{tmp_path / 'test.db'}",
         session_secret="test-secret",

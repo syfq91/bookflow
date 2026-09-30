@@ -10,8 +10,6 @@ All settings come from environment variables (defaults in parentheses):
 
 | Variable                    | Default     | Description                                        |
 | --------------------------- | ----------- | -------------------------------------------------- |
-| `OPDS_HOST`                 | `0.0.0.0`   | Bind address                                       |
-| `OPDS_PORT`                 | `8000`      | Bind port                                          |
 | `OPDS_DATA_DIR`             | `./data`    | Data directory (SQLite + cache)                    |
 | `OPDS_DATABASE_URL`         | derived     | Override the SQLAlchemy database URL               |
 | `OPDS_SESSION_SECRET`       | *(generated)* | Session secret; when unset, random and persisted to `data/.session_secret` |
@@ -119,8 +117,9 @@ uv run flask --app bookflow.app run --port 8000
 ```
 
 Then open `http://127.0.0.1:8000/`, which redirects to the admin dashboard
-(`/admin/`); the OPDS catalog is at `/opds`. Flask's own default is 5000
-and it ignores `OPDS_PORT`, hence the explicit `--port`.
+(`/admin/`); the OPDS catalog is at `/opds`. Flask's own default is 5000,
+hence the explicit `--port` — there is no bind-address/port setting, the
+container always listens on `0.0.0.0:8000` (gunicorn).
 
 Apply database migrations:
 

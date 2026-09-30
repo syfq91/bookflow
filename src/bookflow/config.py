@@ -45,8 +45,6 @@ def _parse_extensions(value: str) -> tuple[str, ...]:
 class Settings:
     """Resolved application settings."""
 
-    host: str
-    port: int
     data_dir: Path
     database_url: str
     session_secret: str
@@ -77,8 +75,6 @@ class Settings:
             database_url = f"sqlite+pysqlite:///{data_dir / 'bookflow.db'}"
 
         return cls(
-            host=_env("OPDS_HOST", "0.0.0.0"),
-            port=int(_env("OPDS_PORT", "8000")),
             data_dir=data_dir,
             database_url=database_url,
             session_secret=_env("OPDS_SESSION_SECRET", ""),
