@@ -165,6 +165,12 @@ docker pull ghcr.io/syfq91/bookflow:latest
 docker compose up -d
 ```
 
+The image is published by the manually-triggered **Publish Docker image to
+GHCR** workflow (`.github/workflows/publish-docker.yml`, run it from the
+Actions tab): it gates on `ruff check` + the full test suite, then pushes
+`ghcr.io/syfq91/bookflow:latest` and a `sha-<commit>` tag using the
+workflow's `GITHUB_TOKEN`.
+
 To build from source instead (the `Dockerfile` at the repo root):
 
 ```bash

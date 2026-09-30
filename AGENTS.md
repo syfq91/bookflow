@@ -25,6 +25,7 @@ uv run alembic revision --autogenerate -m "..."
 uv run gunicorn --bind 0.0.0.0:8000 bookflow.app:app
 docker compose up -d --build          # containerized run (Dockerfile)
 # prebuilt image: docker pull ghcr.io/syfq91/bookflow:latest && docker compose up -d
+# publish image: Actions → "Publish Docker image to GHCR" (manual, workflow_dispatch)
 ```
 
 Verify before committing: `uv run ruff check . && uv run pytest -q`.
