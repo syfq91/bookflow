@@ -12,6 +12,13 @@ def test_healthz(client) -> None:
     assert response.content_type.startswith("application/json")
 
 
+def test_root_redirects_to_admin(client) -> None:
+    response = client.get("/")
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/admin/")
+
+
 def test_factory_creates_data_dirs(settings: Settings) -> None:
     create_app(settings)
 

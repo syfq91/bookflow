@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, redirect, url_for
 
 from bookflow.admin.routes import bp as admin_bp
 from bookflow.auth.routes import bp as auth_bp
@@ -41,6 +41,10 @@ def create_app(settings: Settings | None = None) -> Flask:
     app.register_blueprint(admin_bp)
     app.register_blueprint(opds_bp)
     app.register_blueprint(progression_bp)
+
+    @app.get("/")
+    def index():
+        return redirect(url_for("admin.dashboard"))
 
     @app.get("/healthz")
     def healthz():

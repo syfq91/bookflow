@@ -71,7 +71,7 @@ bookflow/
 ├── .env.example                  documented OPDS_* variables
 │
 ├── src/bookflow/
-│   ├── app.py                    application factory + /healthz
+│   ├── app.py                    application factory + / → /admin/ + /healthz
 │   ├── config.py                 frozen Settings dataclass (env → values)
 │   │
 │   ├── database/
@@ -109,7 +109,7 @@ bookflow/
 │   │                             add_folder, health
 │   └── static/style.css
 │
-└── tests/                        197 tests (see §11)
+└── tests/                        198 tests (see §11)
 ```
 
 Deliberate deviations from the originally sketched layout: every ORM model
@@ -135,7 +135,8 @@ epubkit integration is a package `optimizer/epubkit/` rather than a single
    - `login_rate_limiter` — in-memory failure counter per username.
 6. Jinja global `csrf_token` for form templates.
 7. Register four blueprints: `auth`, `admin`, `opds`, `progression`.
-8. `GET /healthz` → `{"status": "ok"}` (public liveness probe).
+8. `GET /` → `302` to `/admin/` (convenience redirect for the browser).
+9. `GET /healthz` → `{"status": "ok"}` (public liveness probe).
 
 A module-level `app = create_app()` exists for `gunicorn bookflow.app:app`.
 Tests call `create_app(test_settings)` directly after `reset_engine()`.
@@ -330,6 +331,7 @@ directory itself is treated as rebuildable.
 
 | Method | Path | Notes |
 | ------ | ---- | ----- |
+| GET | `/` | `302` redirect to `/admin/` |
 | GET | `/healthz` | public liveness, JSON |
 | GET/POST | `/admin/login` | CSRF on POST, rate limited |
 | POST | `/admin/logout` | CSRF |
@@ -436,7 +438,7 @@ threads (`check_same_thread=False` + WAL-free default journal).
 
 ## 11. Testing
 
-`tests/` (197 tests, `uv run pytest`):
+`tests/` (198 tests, `uv run pytest`):
 
 - `conftest.py` — temp `Settings` (fresh data dir + SQLite per test) and a
   bare app fixture; every suite that needs migrations shadows these with an

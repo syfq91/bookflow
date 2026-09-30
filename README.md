@@ -34,7 +34,8 @@ All settings come from environment variables (defaults in parentheses):
 
 ## Admin UI
 
-Set `OPDS_ADMIN_PASSWORD` and open `/admin/login`. Admin routes require a
+Set `OPDS_ADMIN_PASSWORD` and open `/admin/login` (the site root `/` simply
+redirects to `/admin/`). Admin routes require a
 session; the OPDS routes use HTTP Basic Auth with the same credentials.
 Without `OPDS_ADMIN_PASSWORD` login attempts and the OPDS catalog return
 `503` (the login form itself still renders).
@@ -103,6 +104,9 @@ Run the development server:
 ```bash
 uv run flask --app bookflow.app run
 ```
+
+Then open `http://127.0.0.1:5000/`, which redirects to the admin dashboard
+(`/admin/`); the OPDS catalog is at `/opds`.
 
 Apply database migrations:
 
