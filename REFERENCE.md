@@ -68,11 +68,13 @@ A `401` returns the OPDS Authentication Document
 
 | Endpoint              | Contents                                              |
 | --------------------- | ----------------------------------------------------- |
-| `/opds`               | Root navigation feed: All Books, Recent, Authors, Search, X3/X4 Catalogs |
+| `/opds`               | Root navigation feed: All Books, Recent, Authors, Folders, Search, X3/X4 Catalogs |
 | `/opds/books?page=N`  | All books, A→Z, 50 per page                           |
 | `/opds/recent?page=N` | Books newest first                                    |
 | `/opds/authors`       | Authors grouped by name, with book counts             |
 | `/opds/authors/<name>`| That author's books                                   |
+| `/opds/folders`       | Folder hierarchy: one subsection link per registered folder |
+| `/opds/folders/<id>?path=…&page=N` | One directory level: subsection links for its subfolders plus the books directly inside it; `path` walks down (`?path=Series/Volume 1`), books paginate at 50 |
 | `/opds/search?q=…`    | Search across title, authors, description, series, publisher, ISBN |
 | `/opds/books/<id>`    | Feed for a single book                                |
 | `/opds/download/<id>` | The book file itself (attachment)                     |
@@ -80,6 +82,7 @@ A `401` returns the OPDS Authentication Document
 | `/opds/x3`            | Xteink X3 catalog: every book, EPUBs acquired via the X3 download |
 | `/opds/x3/books/<id>` | Single-book feed in the X3 catalog                    |
 | `/opds/x3/download/<id>` | EPUB optimized for the Xteink X3 (on demand, cached) |
+| `/opds/x3/folders`, `/opds/x3/folders/<id>?path=…` | The folder hierarchy with X3-optimized EPUB acquisitions (same for `x4`) |
 | `/opds/x4`            | Xteink X4 catalog: every book, EPUBs acquired via the X4 download |
 | `/opds/x4/books/<id>` | Single-book feed in the X4 catalog                    |
 | `/opds/x4/download/<id>` | EPUB optimized for the Xteink X4 (on demand, cached) |
@@ -88,6 +91,11 @@ A `401` returns the OPDS Authentication Document
 The X3/X4 catalogs contain the full library; only EPUB entries use the
 device's optimized download, while other formats fall back to the original
 file so no acquisition link is ever broken.
+
+Folder feeds mirror the library's directory tree from the index — they read
+`books.relative_path` only and never touch the filesystem, so an unknown
+`path` simply returns an empty feed. At most 500 subfolders are listed per
+level (deeper trees are still reachable through `path` directly).
 
 Optimization runs only when an X3/X4 download is requested — never during
 scans or startup — using a vendored copy of the
