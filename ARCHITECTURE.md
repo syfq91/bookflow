@@ -374,7 +374,7 @@ All `/admin/*` (except login) require the session cookie.
 | `/opds/authors`, `/opds/authors/<name>` | grouped navigation + author feed |
 | `/opds/folders`, `/opds/folders/<id>?path=` | folder hierarchy: registered folders → one directory level (subfolders + books), derived from `relative_path`, never from the filesystem |
 | `/opds/books/<id>`, `/opds/download/<id>`, `/opds/cover/<id>` | single book, original file, extracted cover |
-| `/opds/x3`, `/opds/x3/books/<id>`, `/opds/x3/download/<id>`, `/opds/x3/folders`, `/opds/x3/folders/<id>` | X3 catalog (same for `x4`) |
+| `/opds/x3`, `/opds/x3/books`, `/opds/x3/recent`, `/opds/x3/authors`, `/opds/x3/search?q=`, `/opds/x3/folders`, `/opds/x3/folders/<id>`, `/opds/x3/books/<id>`, `/opds/x3/download/<id>` | X3 catalog — same sections as `/opds` (same for `x4`) |
 | `/opds/authentication` | public OPDS Authentication Document |
 | `/opds/publications/<id>/progression` | `GET`/`PUT`, `application/opds-progression+json` |
 

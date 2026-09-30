@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from xml.sax.saxutils import escape as xml_escape
 
 from flask import (
@@ -67,67 +68,113 @@ def authentication():
 
 @bp.get("/")
 @bp.get("")
-def root_feed():
+def root_feed() -> Response:
+    """Root navigation feed of the original catalog."""
+    return _catalog_root(None)
+
+
+@bp.get("/x3")
+def x3_feed() -> Response:
+    """Root navigation feed of the X3 catalog."""
+    return _catalog_root("x3")
+
+
+@bp.get("/x4")
+def x4_feed() -> Response:
+    """Root navigation feed of the X4 catalog."""
+    return _catalog_root("x4")
+
+
+def _catalog_root(profile: str | None) -> Response:
+    ep = _endpoints(profile)
     links = [
         Link(
             SUBSECTION_REL,
-            url_for("opds.books_feed"),
+            url_for(ep.books),
             ACQUISITION_TYPE,
             title="All Books",
         ),
         Link(
             SUBSECTION_REL,
-            url_for("opds.recent_feed"),
+            url_for(ep.recent),
             ACQUISITION_TYPE,
             title="Recent",
         ),
         Link(
             SUBSECTION_REL,
-            url_for("opds.authors_feed"),
+            url_for(ep.authors),
             NAVIGATION_TYPE,
             title="Authors",
         ),
         Link(
             SUBSECTION_REL,
-            url_for("opds.folders_feed"),
+            url_for(ep.folders),
             NAVIGATION_TYPE,
             title="Folders",
         ),
-        Link(
-            SUBSECTION_REL,
-            url_for("opds.x3_feed"),
-            ACQUISITION_TYPE,
-            title="X3 Catalog",
-        ),
-        Link(
-            SUBSECTION_REL,
-            url_for("opds.x4_feed"),
-            ACQUISITION_TYPE,
-            title="X4 Catalog",
-        ),
+    ]
+    if profile is None:
+        links += [
+            Link(
+                SUBSECTION_REL,
+                url_for("opds.x3_feed"),
+                ACQUISITION_TYPE,
+                title="X3 Catalog",
+            ),
+            Link(
+                SUBSECTION_REL,
+                url_for("opds.x4_feed"),
+                ACQUISITION_TYPE,
+                title="X4 Catalog",
+            ),
+        ]
+    links.append(
         Link(
             SEARCH_REL,
-            f"{url_for('opds.search_feed')}?q={{searchTerms}}",
+            f"{url_for(ep.search)}?q={{searchTerms}}",
             ACQUISITION_TYPE,
             title="Search",
-        ),
-    ]
+        )
+    )
     with session_scope() as session:
         try:
             updated = session.scalar(select(func.max(Book.updated_at)))
         except OperationalError:
             updated = None
+    title = (
+        "BookFlow"
+        if profile is None
+        else f"BookFlow — {profile.upper()} Catalog"
+    )
     data = navigation_feed(
-        title="BookFlow",
+        title=title,
         updated=updated,
-        self_href=url_for("opds.root_feed"),
+        self_href=url_for(ep.root),
         links=links,
     )
     return Response(data, content_type=NAVIGATION_TYPE)
 
 
 @bp.get("/books")
-def books_feed():
+def books_feed() -> Response:
+    """All books of the original catalog, A→Z."""
+    return _books_feed(None)
+
+
+@bp.get("/x3/books")
+def x3_books_feed() -> Response:
+    """All books with X3-optimized EPUB acquisitions."""
+    return _books_feed("x3")
+
+
+@bp.get("/x4/books")
+def x4_books_feed() -> Response:
+    """All books with X4-optimized EPUB acquisitions."""
+    return _books_feed("x4")
+
+
+def _books_feed(profile: str | None) -> Response:
+    ep = _endpoints(profile)
     page = _page()
     offset = (page - 1) * PAGE_SIZE
     with session_scope() as session:
@@ -135,22 +182,41 @@ def books_feed():
         updated = session.scalar(select(func.max(Book.updated_at)))
         books = _page_of_books(session, offset)
     next_href = (
-        url_for("opds.books_feed", page=page + 1)
+        url_for(ep.books, page=page + 1)
         if offset + len(books) < total
         else None
     )
     data = acquisition_feed(
-        title="BookFlow — All Books",
+        title=f"BookFlow — {_prefix(profile)}All Books",
         updated=updated,
-        self_href=url_for("opds.books_feed", page=page if page > 1 else None),
+        self_href=url_for(ep.books, page=page if page > 1 else None),
         books=books,
         next_href=next_href,
+        profile=profile,
     )
     return Response(data, content_type=ACQUISITION_TYPE)
 
 
 @bp.get("/recent")
-def recent_feed():
+def recent_feed() -> Response:
+    """Books of the original catalog, newest first."""
+    return _recent_feed(None)
+
+
+@bp.get("/x3/recent")
+def x3_recent_feed() -> Response:
+    """Newest books with X3-optimized EPUB acquisitions."""
+    return _recent_feed("x3")
+
+
+@bp.get("/x4/recent")
+def x4_recent_feed() -> Response:
+    """Newest books with X4-optimized EPUB acquisitions."""
+    return _recent_feed("x4")
+
+
+def _recent_feed(profile: str | None) -> Response:
+    ep = _endpoints(profile)
     page = _page()
     offset = (page - 1) * PAGE_SIZE
     with session_scope() as session:
@@ -165,60 +231,15 @@ def recent_feed():
             )
         )
     next_href = (
-        url_for("opds.recent_feed", page=page + 1)
+        url_for(ep.recent, page=page + 1)
         if offset + len(books) < total
         else None
     )
     data = acquisition_feed(
-        title="BookFlow — Recent",
+        title=f"BookFlow — {_prefix(profile)}Recent",
         updated=updated,
-        self_href=url_for("opds.recent_feed", page=page if page > 1 else None),
+        self_href=url_for(ep.recent, page=page if page > 1 else None),
         books=books,
-        next_href=next_href,
-    )
-    return Response(data, content_type=ACQUISITION_TYPE)
-
-
-# --- device catalogs --------------------------------------------------------
-
-
-@bp.get("/x3")
-def x3_feed():
-    return _device_feed("x3")
-
-
-@bp.get("/x4")
-def x4_feed():
-    return _device_feed("x4")
-
-
-def _device_feed(profile: str):
-    page = _page()
-    offset = (page - 1) * PAGE_SIZE
-    with session_scope() as session:
-        total = int(session.scalar(select(func.count(Book.id))) or 0)
-        updated = session.scalar(select(func.max(Book.updated_at)))
-        books = _page_of_books(session, offset)
-    next_href = (
-        url_for(f"opds.{profile}_feed", page=page + 1)
-        if offset + len(books) < total
-        else None
-    )
-    data = acquisition_feed(
-        title=f"BookFlow — {profile.upper()} Catalog",
-        updated=updated,
-        self_href=url_for(
-            f"opds.{profile}_feed", page=page if page > 1 else None
-        ),
-        books=books,
-        links=[
-            Link(
-                SUBSECTION_REL,
-                url_for(f"opds.{profile}_folders_feed"),
-                NAVIGATION_TYPE,
-                title="Folders",
-            )
-        ],
         next_href=next_href,
         profile=profile,
     )
@@ -265,7 +286,7 @@ def x4_folder_feed(folder_id: int) -> Response:
 
 
 def _folders_index(profile: str | None) -> Response:
-    index_endpoint, level_endpoint = _folder_endpoints(profile)
+    ep = _endpoints(profile)
     with session_scope() as session:
         folders = list(
             session.execute(
@@ -278,24 +299,23 @@ def _folders_index(profile: str | None) -> Response:
     links = [
         Link(
             SUBSECTION_REL,
-            url_for(level_endpoint, folder_id=folder_id),
+            url_for(ep.folder_level, folder_id=folder_id),
             ACQUISITION_TYPE,
             title=name,
         )
         for folder_id, name in folders
     ]
-    prefix = f"{profile.upper()} — " if profile else ""
     data = navigation_feed(
-        title=f"BookFlow — {prefix}Folders",
+        title=f"BookFlow — {_prefix(profile)}Folders",
         updated=updated,
-        self_href=url_for(index_endpoint),
+        self_href=url_for(ep.folders),
         links=links,
     )
     return Response(data, content_type=NAVIGATION_TYPE)
 
 
 def _folder_level(folder_id: int, profile: str | None) -> Response:
-    _, endpoint = _folder_endpoints(profile)
+    ep = _endpoints(profile)
     path = _clean_path(request.args.get("path", ""))
     prefix = f"{path}/" if path else ""
     page = _page()
@@ -343,7 +363,7 @@ def _folder_level(folder_id: int, profile: str | None) -> Response:
         Link(
             SUBSECTION_REL,
             url_for(
-                endpoint,
+                ep.folder_level,
                 folder_id=folder_id,
                 path=f"{path}/{segment}" if path else segment,
             ),
@@ -353,17 +373,21 @@ def _folder_level(folder_id: int, profile: str | None) -> Response:
         for segment in segments
     ]
     label = folder.name if not path else f"{folder.name} / {path}"
-    prefix_label = f"{profile.upper()} — " if profile else ""
     next_href = (
-        url_for(endpoint, folder_id=folder_id, path=path or None, page=page + 1)
+        url_for(
+            ep.folder_level,
+            folder_id=folder_id,
+            path=path or None,
+            page=page + 1,
+        )
         if offset + len(books) < total
         else None
     )
     data = acquisition_feed(
-        title=f"BookFlow — {prefix_label}{label}",
+        title=f"BookFlow — {_prefix(profile)}{label}",
         updated=updated,
         self_href=url_for(
-            endpoint,
+            ep.folder_level,
             folder_id=folder_id,
             path=path or None,
             page=page if page > 1 else None,
@@ -380,7 +404,25 @@ def _folder_level(folder_id: int, profile: str | None) -> Response:
 
 
 @bp.get("/authors")
-def authors_feed():
+def authors_feed() -> Response:
+    """Author index of the original catalog."""
+    return _authors_feed(None)
+
+
+@bp.get("/x3/authors")
+def x3_authors_feed() -> Response:
+    """Author index for the X3 catalog."""
+    return _authors_feed("x3")
+
+
+@bp.get("/x4/authors")
+def x4_authors_feed() -> Response:
+    """Author index for the X4 catalog."""
+    return _authors_feed("x4")
+
+
+def _authors_feed(profile: str | None) -> Response:
+    ep = _endpoints(profile)
     with session_scope() as session:
         rows = list(
             session.execute(
@@ -395,22 +437,40 @@ def authors_feed():
         author_entry(
             name,
             int(count),
-            url_for("opds.author_feed", author=name),
+            url_for(ep.author, author=name),
             updated,
         )
         for name, count in rows
     ]
     data = navigation_feed(
-        title="BookFlow — Authors",
+        title=f"BookFlow — {_prefix(profile)}Authors",
         updated=updated,
-        self_href=url_for("opds.authors_feed"),
+        self_href=url_for(ep.authors),
         entries=entries,
     )
     return Response(data, content_type=NAVIGATION_TYPE)
 
 
 @bp.get("/authors/<path:author>")
-def author_feed(author: str):
+def author_feed(author: str) -> Response:
+    """Books by one author, original catalog."""
+    return _author_feed(None, author)
+
+
+@bp.get("/x3/authors/<path:author>")
+def x3_author_feed(author: str) -> Response:
+    """Books by one author with X3-optimized EPUB acquisitions."""
+    return _author_feed("x3", author)
+
+
+@bp.get("/x4/authors/<path:author>")
+def x4_author_feed(author: str) -> Response:
+    """Books by one author with X4-optimized EPUB acquisitions."""
+    return _author_feed("x4", author)
+
+
+def _author_feed(profile: str | None, author: str) -> Response:
+    ep = _endpoints(profile)
     page = _page()
     offset = (page - 1) * PAGE_SIZE
     with session_scope() as session:
@@ -421,18 +481,19 @@ def author_feed(author: str):
         updated = session.scalar(select(func.max(Book.updated_at)).where(condition))
         books = _page_of_books(session, offset, condition)
     next_href = (
-        url_for("opds.author_feed", author=author, page=page + 1)
+        url_for(ep.author, author=author, page=page + 1)
         if offset + len(books) < total
         else None
     )
     data = acquisition_feed(
-        title=f"BookFlow — {author}",
+        title=f"BookFlow — {_prefix(profile)}{author}",
         updated=updated,
         self_href=url_for(
-            "opds.author_feed", author=author, page=page if page > 1 else None
+            ep.author, author=author, page=page if page > 1 else None
         ),
         books=books,
         next_href=next_href,
+        profile=profile,
     )
     return Response(data, content_type=ACQUISITION_TYPE)
 
@@ -441,7 +502,25 @@ def author_feed(author: str):
 
 
 @bp.get("/search")
-def search_feed():
+def search_feed() -> Response:
+    """Search the original catalog."""
+    return _search_feed(None)
+
+
+@bp.get("/x3/search")
+def x3_search_feed() -> Response:
+    """Search with X3-optimized EPUB acquisitions."""
+    return _search_feed("x3")
+
+
+@bp.get("/x4/search")
+def x4_search_feed() -> Response:
+    """Search with X4-optimized EPUB acquisitions."""
+    return _search_feed("x4")
+
+
+def _search_feed(profile: str | None) -> Response:
+    ep = _endpoints(profile)
     query = request.args.get("q", "").strip()
     page = _page()
     offset = (page - 1) * PAGE_SIZE
@@ -453,20 +532,25 @@ def search_feed():
         updated = session.scalar(select(func.max(Book.updated_at)).where(condition))
         books = _page_of_books(session, offset, condition)
     next_href = (
-        url_for("opds.search_feed", q=query, page=page + 1)
+        url_for(ep.search, q=query, page=page + 1)
         if offset + len(books) < total
         else None
     )
     data = acquisition_feed(
-        title=f"BookFlow — Search: {query}" if query else "BookFlow — Search",
+        title=(
+            f"BookFlow — {_prefix(profile)}Search: {query}"
+            if query
+            else f"BookFlow — {_prefix(profile)}Search"
+        ),
         updated=updated,
         self_href=url_for(
-            "opds.search_feed",
+            ep.search,
             q=query or None,
             page=page if page > 1 else None,
         ),
         books=books,
         next_href=next_href,
+        profile=profile,
     )
     return Response(data, content_type=ACQUISITION_TYPE)
 
@@ -490,20 +574,17 @@ def x4_book_feed(book_id: int):
 
 
 def _book_feed(book_id: int, profile: str | None):
+    ep = _endpoints(profile)
     with session_scope() as session:
         book = session.get(Book, book_id)
         if book is None:
             abort(404)
         title = book.title or book.relative_path
         updated = book.updated_at or book.created_at
-        prefix = f"{profile.upper()} — " if profile else ""
-        endpoint = (
-            f"opds.{profile}_book_feed" if profile else "opds.book_feed"
-        )
         data = acquisition_feed(
-            title=f"BookFlow — {prefix}{title}",
+            title=f"BookFlow — {_prefix(profile)}{title}",
             updated=updated,
-            self_href=url_for(endpoint, book_id=book_id),
+            self_href=url_for(ep.book, book_id=book_id),
             books=[book],
             profile=profile,
         )
@@ -582,11 +663,51 @@ def _page() -> int:
         return 1
 
 
-def _folder_endpoints(profile: str | None) -> tuple[str, str]:
-    """Return the (index, level) endpoint names for a catalog profile."""
+@dataclass(frozen=True)
+class _Endpoints:
+    """Endpoint names for one catalog (original or a device profile)."""
+
+    root: str
+    books: str
+    recent: str
+    authors: str
+    author: str
+    search: str
+    folders: str
+    folder_level: str
+    book: str
+
+
+def _endpoints(profile: str | None) -> _Endpoints:
     if profile is None:
-        return "opds.folders_feed", "opds.folder_feed"
-    return f"opds.{profile}_folders_feed", f"opds.{profile}_folder_feed"
+        return _Endpoints(
+            root="opds.root_feed",
+            books="opds.books_feed",
+            recent="opds.recent_feed",
+            authors="opds.authors_feed",
+            author="opds.author_feed",
+            search="opds.search_feed",
+            folders="opds.folders_feed",
+            folder_level="opds.folder_feed",
+            book="opds.book_feed",
+        )
+    prefix = f"opds.{profile}"
+    return _Endpoints(
+        root=f"{prefix}_feed",
+        books=f"{prefix}_books_feed",
+        recent=f"{prefix}_recent_feed",
+        authors=f"{prefix}_authors_feed",
+        author=f"{prefix}_author_feed",
+        search=f"{prefix}_search_feed",
+        folders=f"{prefix}_folders_feed",
+        folder_level=f"{prefix}_folder_feed",
+        book=f"{prefix}_book_feed",
+    )
+
+
+def _prefix(profile: str | None) -> str:
+    """Return the title prefix for one catalog ("X3 — " or empty)."""
+    return f"{profile.upper()} — " if profile else ""
 
 
 def _clean_path(value: str) -> str:

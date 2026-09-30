@@ -68,10 +68,10 @@ http://127.0.0.1:8000/opds
 bare metal both default to `8000`). Authenticate with the admin
 credentials. Feeds cover all books (`/opds/books`), recent additions
 (`/opds/recent`), authors, the folder tree (`/opds/folders`, mirroring the
-directory layout), and search, plus X3/X4 device catalogs
-(`/opds/x3`, `/opds/x4`) whose EPUB downloads are optimized on demand
-and cached; other formats fall back to the original file. Reading
-positions sync via OPDS Progression
+directory layout), and search. The X3/X4 device catalogs (`/opds/x3`,
+`/opds/x4`) offer exactly the same sections — only their EPUB downloads are
+optimized on demand and cached; other formats fall back to the original
+file. Reading positions sync via OPDS Progression
 (`/opds/publications/<id>/progression`). The full endpoint list is in
 [REFERENCE.md](REFERENCE.md#opds-catalog).
 
