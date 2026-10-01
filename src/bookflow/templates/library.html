@@ -54,9 +54,7 @@
         href="{{ url_for('admin.book_download', book_id=book.id) }}"
         >{{ book.name }}</a
       >
-      {% if book.title and book.title != book.name %}
-      <span class="muted">{{ book.title }}</span>
-      {% endif %} {% if book.format %}
+      {% if book.format %}
       <span class="badge badge-ok">{{ book.format }}</span>
       {% endif %} {% if book.size %}
       <span class="muted">{{ book.size|filesizeformat }}</span>

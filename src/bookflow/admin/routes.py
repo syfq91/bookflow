@@ -174,7 +174,6 @@ def library_tree(folder_id: int):
                     {
                         "id": book.id,
                         "name": book.relative_path,
-                        "title": book.title,
                         "format": book.file_format,
                         "size": book.file_size,
                     }
