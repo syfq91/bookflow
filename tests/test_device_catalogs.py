@@ -181,7 +181,7 @@ def test_root_feed_links_device_catalogs(client, folder_id) -> None:
 
 
 @pytest.mark.parametrize("profile", ["x3", "x4"])
-def test_device_root_has_same_sections_as_original(client, profile) -> None:
+def test_device_root_is_folder_view(client, folder_id, profile) -> None:
     original = _parse(_get(client, "/opds"))
 
     resp = _get(client, f"/opds/{profile}")
@@ -192,10 +192,12 @@ def test_device_root_has_same_sections_as_original(client, profile) -> None:
         f"BookFlow — {profile.upper()} Catalog"
     )
     assert _section_titles(feed) == {
-        "All Books": f"/opds/{profile}/books",
-        "Recent": f"/opds/{profile}/recent",
-        "Authors": f"/opds/{profile}/authors",
-        "Folders": f"/opds/{profile}/folders",
+        "books": f"/opds/{profile}/folders/{folder_id}",
+    }
+    assert _section_titles(original) == {
+        "books": f"/opds/folders/{folder_id}",
+        "X3 Catalog": "/opds/x3",
+        "X4 Catalog": "/opds/x4",
     }
     for section in _section_titles(feed):
         assert section in _section_titles(original)

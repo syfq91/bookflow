@@ -171,18 +171,21 @@ def _register(tmp_path: Path, name: str) -> int:
 # --- discovery --------------------------------------------------------------
 
 
-def test_root_feed_links_folders(client) -> None:
+def test_root_feed_lists_registered_folders(
+    client, folder_id: int
+) -> None:
     feed = _parse(_get(client, "/opds"))
 
     by_rel = _links_by_rel(_feed_links(feed))
     folders = [
         link
         for link in by_rel[SUBSECTION_REL]
-        if link.get("href") == "/opds/folders"
+        if link.get("href") == f"/opds/folders/{folder_id}"
     ]
     assert len(folders) == 1
-    assert folders[0].get("title") == "Folders"
-    assert folders[0].get("type") == NAV
+    assert folders[0].get("title") == "books"
+    assert folders[0].get("type") == ACQ
+    assert _nav_items(feed)["books"] == f"/opds/folders/{folder_id}"
 
 
 def test_folders_index_requires_auth(client) -> None:
@@ -391,17 +394,20 @@ def test_folders_are_isolated_between_registered_folders(
 
 
 @pytest.mark.parametrize("profile", ["x3", "x4"])
-def test_device_catalog_links_to_folders(client, folder_id: int, profile) -> None:
+def test_device_catalog_lists_registered_folders(
+    client, folder_id: int, profile
+) -> None:
     feed = _parse(_get(client, f"/opds/{profile}"))
 
     by_rel = _links_by_rel(_feed_links(feed))
     folders = [
         link
         for link in by_rel[SUBSECTION_REL]
-        if link.get("href") == f"/opds/{profile}/folders"
+        if link.get("href") == f"/opds/{profile}/folders/{folder_id}"
     ]
     assert len(folders) == 1
-    assert folders[0].get("title") == "Folders"
+    assert folders[0].get("title") == "books"
+    assert _nav_items(feed)["books"] == f"/opds/{profile}/folders/{folder_id}"
 
 
 @pytest.mark.parametrize("profile", ["x3", "x4"])

@@ -197,33 +197,31 @@ def test_unconfigured_password_returns_503(settings: Settings) -> None:
 # --- discovery --------------------------------------------------------------
 
 
-def test_root_feed_exposes_sections(client) -> None:
+def test_root_feed_is_the_folder_view(client, folder_id: int) -> None:
     feed = _parse(_get(client, "/opds"))
 
     assert feed.findtext("a:title", namespaces=NS) == "BookFlow"
     by_rel = _links_by_rel(_feed_links(feed))
     hrefs = {link.get("href") for link in _feed_links(feed)}
-    assert "/opds/books" in hrefs
-    assert "/opds/recent" in hrefs
-    assert "/opds/authors" in hrefs
+    assert "/opds/books" not in hrefs
+    assert "/opds/recent" not in hrefs
+    assert "/opds/authors" not in hrefs
+    assert "/opds/folders" not in hrefs
     assert "subsection" in by_rel
     search = by_rel["search"]
     assert len(search) == 1
     assert "{searchTerms}" in search[0].get("href", "")
     self_link = by_rel["self"]
     assert self_link[0].get("type") == NAV
-    # Clients such as KOReader browse the root from entries alone, so every
-    # section must also be an entry and not just a feed-level link.
+    # Clients such as KOReader browse the root from entries alone, so the
+    # registered folders must be entries and not just feed-level links.
     sections: dict[str, tuple[str, str]] = {}
     for entry in _entries(feed):
         links = _links_by_rel(_entry_links(entry)).get(SUBSECTION_REL, [])
         title = entry.findtext("a:title", namespaces=NS) or ""
         sections[title] = (links[0].get("href", ""), links[0].get("type", ""))
     assert sections == {
-        "All Books": ("/opds/books", ACQ),
-        "Recent": ("/opds/recent", ACQ),
-        "Authors": ("/opds/authors", NAV),
-        "Folders": ("/opds/folders", NAV),
+        "books": (f"/opds/folders/{folder_id}", ACQ),
         "X3 Catalog": ("/opds/x3", NAV),
         "X4 Catalog": ("/opds/x4", NAV),
     }

@@ -66,7 +66,7 @@ A `401` returns the OPDS Authentication Document
 
 | Endpoint              | Contents                                              |
 | --------------------- | ----------------------------------------------------- |
-| `/opds`               | Root navigation feed: All Books, Recent, Authors, Folders, Search, X3/X4 Catalogs |
+| `/opds`               | Root navigation feed: the folder view — one entry per registered folder, plus Search and the X3/X4 catalog links |
 | `/opds/books?page=N`  | All books, A→Z, 50 per page                           |
 | `/opds/recent?page=N` | Books newest first                                    |
 | `/opds/authors`       | Authors grouped by name, with book counts             |
@@ -77,23 +77,27 @@ A `401` returns the OPDS Authentication Document
 | `/opds/books/<id>`    | Feed for a single book                                |
 | `/opds/download/<id>` | The book file itself (attachment)                     |
 | `/opds/cover/<id>`    | Cover image extracted from the EPUB on demand (`404` when absent) |
-| `/opds/x3`            | X3 catalog root: the same sections as `/opds` — All Books, Recent, Authors, Folders, Search |
+| `/opds/x3`            | X3 catalog root: the folder view with X3-optimized acquisitions, plus Search |
 | `/opds/x3/books?page=N`, `/opds/x3/recent?page=N` | Flat feeds of the X3 catalog, EPUBs via the X3 download |
 | `/opds/x3/authors`, `/opds/x3/authors/<name>`, `/opds/x3/search?q=…` | Author index, author feed and search for the X3 catalog |
 | `/opds/x3/books/<id>` | Single-book feed in the X3 catalog                    |
 | `/opds/x3/download/<id>` | EPUB optimized for the Xteink X3 (on demand, cached) |
 | `/opds/x3/folders`, `/opds/x3/folders/<id>?path=…` | The folder hierarchy with X3-optimized EPUB acquisitions |
-| `/opds/x4`            | X4 catalog root: same sections as `/opds/x3`          |
+| `/opds/x4`            | X4 catalog root: same as `/opds/x3`                  |
 | `/opds/x4/books`, `/opds/x4/recent`, `/opds/x4/authors`, `/opds/x4/search`, `/opds/x4/folders`, `/opds/x4/folders/<id>?path=…` | The X3 URLs above with X4 acquisitions |
 | `/opds/x4/books/<id>` | Single-book feed in the X4 catalog                    |
 | `/opds/x4/download/<id>` | EPUB optimized for the Xteink X4 (on demand, cached) |
 | `/opds/publications/<id>/progression` | Reading position per OPDS Progression 1.0: `GET` reads, `PUT` updates (`application/opds-progression+json`); conflicts are `409` problem details — full client docs below |
 
-The X3/X4 catalogs contain the full library and mirror the original
-catalog's structure section for section, so a client pointed at `/opds`,
-`/opds/x3` or `/opds/x4` browses the same tree; only EPUB entries differ —
-they use the device's optimized download, while other formats fall back to
-the original file so no acquisition link is ever broken.
+The roots (`/opds`, `/opds/x3`, `/opds/x4`) all open straight into the folder
+view, so a client pointed at any of them browses the same tree. The flat
+feeds (`/opds/books`, `/opds/recent`, `/opds/authors`, `/opds/folders` and
+their X3/X4 mirrors) still exist but are no longer linked from the roots —
+reach them by URL or through search. The X3/X4 catalogs contain the full
+library and mirror the original catalog's structure section for section;
+only EPUB entries differ — they use the device's optimized download, while
+other formats fall back to the original file so no acquisition link is ever
+broken.
 
 Folder feeds mirror the library's directory tree from the index — they read
 `books.relative_path` only and never touch the filesystem, so an unknown

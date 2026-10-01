@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
+from xml.etree import ElementTree
 from xml.sax.saxutils import escape as xml_escape
 
 from flask import (
@@ -70,39 +73,54 @@ def authentication():
 @bp.get("/")
 @bp.get("")
 def root_feed() -> Response:
-    """Root navigation feed of the original catalog."""
+    """Root navigation feed of the original catalog (the folder view)."""
     return _catalog_root(None)
 
 
 @bp.get("/x3")
 def x3_feed() -> Response:
-    """Root navigation feed of the X3 catalog."""
+    """Root navigation feed of the X3 catalog (the folder view)."""
     return _catalog_root("x3")
 
 
 @bp.get("/x4")
 def x4_feed() -> Response:
-    """Root navigation feed of the X4 catalog."""
+    """Root navigation feed of the X4 catalog (the folder view)."""
     return _catalog_root("x4")
 
 
 def _catalog_root(profile: str | None) -> Response:
+    """Build the root feed of a catalog: registered folders, listed directly.
+
+    The root feed *is* the folders view, so clients land in the folder
+    hierarchy without an extra hop. The original catalog keeps its X3/X4
+    catalog links so the device profiles stay reachable.
+    """
     ep = _endpoints(profile)
-    sections: list[tuple[str, str, str]] = [
-        ("All Books", url_for(ep.books), ACQUISITION_TYPE),
-        ("Recent", url_for(ep.recent), ACQUISITION_TYPE),
-        ("Authors", url_for(ep.authors), NAVIGATION_TYPE),
-        ("Folders", url_for(ep.folders), NAVIGATION_TYPE),
-    ]
+    folders = _registered_folders()
+    with session_scope() as session:
+        try:
+            updated = session.scalar(select(func.max(Book.updated_at)))
+        except OperationalError:
+            updated = None
+    links, entries = _folder_items(ep, folders, updated)
     if profile is None:
-        sections += [
-            ("X3 Catalog", url_for("opds.x3_feed"), NAVIGATION_TYPE),
-            ("X4 Catalog", url_for("opds.x4_feed"), NAVIGATION_TYPE),
-        ]
-    links = [
-        Link(SUBSECTION_REL, href, link_type, title=name)
-        for name, href, link_type in sections
-    ]
+        for name, href in (
+            ("X3 Catalog", url_for("opds.x3_feed")),
+            ("X4 Catalog", url_for("opds.x4_feed")),
+        ):
+            links.append(
+                Link(SUBSECTION_REL, href, NAVIGATION_TYPE, title=name)
+            )
+            entries.append(
+                nav_entry(
+                    entry_id=f"tag:bookflow,section,{href}",
+                    title=name,
+                    href=href,
+                    link_type=NAVIGATION_TYPE,
+                    updated=updated,
+                )
+            )
     links.append(
         Link(
             SEARCH_REL,
@@ -111,21 +129,6 @@ def _catalog_root(profile: str | None) -> Response:
             title="Search",
         )
     )
-    with session_scope() as session:
-        try:
-            updated = session.scalar(select(func.max(Book.updated_at)))
-        except OperationalError:
-            updated = None
-    entries = [
-        nav_entry(
-            entry_id=f"tag:bookflow,section,{href}",
-            title=name,
-            href=href,
-            link_type=link_type,
-            updated=updated,
-        )
-        for name, href, link_type in sections
-    ]
     title = (
         "BookFlow"
         if profile is None
@@ -271,17 +274,24 @@ def x4_folder_feed(folder_id: int) -> Response:
     return _folder_level(folder_id, "x4")
 
 
-def _folders_index(profile: str | None) -> Response:
-    ep = _endpoints(profile)
+def _registered_folders() -> list[tuple[int, str]]:
+    """Every registered folder as ``(id, name)``, case-insensitive order."""
     with session_scope() as session:
-        folders = list(
+        return list(
             session.execute(
                 select(LibraryFolder.id, LibraryFolder.name).order_by(
                     func.lower(LibraryFolder.name)
                 )
             )
         )
-        updated = session.scalar(select(func.max(Book.updated_at)))
+
+
+def _folder_items(
+    ep: _Endpoints,
+    folders: Sequence[tuple[int, str]],
+    updated: datetime | None,
+) -> tuple[list[Link], list[ElementTree.Element]]:
+    """Feed-level links and navigation entries for the registered folders."""
     links = [
         Link(
             SUBSECTION_REL,
@@ -301,6 +311,15 @@ def _folders_index(profile: str | None) -> Response:
         )
         for folder_id, name in folders
     ]
+    return links, entries
+
+
+def _folders_index(profile: str | None) -> Response:
+    ep = _endpoints(profile)
+    folders = _registered_folders()
+    with session_scope() as session:
+        updated = session.scalar(select(func.max(Book.updated_at)))
+    links, entries = _folder_items(ep, folders, updated)
     data = navigation_feed(
         title=f"BookFlow — {_prefix(profile)}Folders",
         updated=updated,
