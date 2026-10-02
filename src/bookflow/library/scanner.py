@@ -19,6 +19,7 @@ from sqlalchemy import select
 from bookflow.database.database import session_scope
 from bookflow.database.models import Book, LibraryFolder
 from bookflow.library.metadata import extract_metadata
+from bookflow.library.paths import resolve_readable_dir
 
 logger = logging.getLogger(__name__)
 
@@ -254,13 +255,11 @@ def _walk(
 
 
 def _unavailable_reason(root: Path) -> str | None:
-    if not root.exists():
-        return f"Folder is unavailable: {root}"
-    if not root.is_dir():
-        return f"Path is not a directory: {root}"
-    if not os.access(root, os.R_OK | os.X_OK):
-        return f"Folder is not readable: {root}"
-    return None
+    """Why ``root`` cannot be scanned, or None when it is usable."""
+    _path, error = resolve_readable_dir(str(root))
+    if error is None:
+        return None
+    return f"Folder is unavailable: {root} ({error})"
 
 
 def _utcnow() -> datetime:

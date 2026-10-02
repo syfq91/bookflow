@@ -6,7 +6,6 @@ filesystem is never written to, renamed or deleted.
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -14,6 +13,7 @@ from sqlalchemy import func, select
 
 from bookflow.database.database import session_scope
 from bookflow.database.models import Book, LibraryFolder
+from bookflow.library.paths import resolve_readable_dir
 
 
 @dataclass(frozen=True)
@@ -33,23 +33,9 @@ def add_folder(raw_path: str) -> FolderResult:
     if not value:
         return FolderResult(ok=False, error="Enter a folder path.")
 
-    candidate = Path(value).expanduser()
-    if not candidate.is_absolute():
-        return FolderResult(ok=False, error="Path must be absolute.")
-
-    try:
-        resolved = candidate.resolve(strict=True)
-    except FileNotFoundError:
-        return FolderResult(ok=False, error="Folder does not exist.")
-    except OSError:
-        return FolderResult(ok=False, error="Folder could not be resolved.")
-    except RuntimeError:
-        return FolderResult(ok=False, error="Folder path contains a symlink loop.")
-
-    if not resolved.is_dir():
-        return FolderResult(ok=False, error="Path is not a directory.")
-    if not os.access(resolved, os.R_OK | os.X_OK):
-        return FolderResult(ok=False, error="Folder is not readable.")
+    resolved, error = resolve_readable_dir(value)
+    if error is not None or resolved is None:
+        return FolderResult(ok=False, error=error)
 
     path = str(resolved)
     name = resolved.name or path

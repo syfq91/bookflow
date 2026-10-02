@@ -48,13 +48,13 @@ reached via dynamic `url_for`), all templates and `static/style.css`
       wrappers, and `_page_of_books` is gone. `_catalog_root` /
       `_folders_index` / `_authors_feed` keep their navigation feeds but
       already shared `_registered_folders()` + `_folder_items()`.
-- [ ] **Path validation duplicated three times**
-      `src/bookflow/library/service.py:40-52` ≡
-      `src/bookflow/library/browse.py:52-66` (byte-identical sequence and
-      user-facing messages), with a third variant in
-      `src/bookflow/library/scanner.py:256-263`. Extract e.g.
-      `resolve_readable_dir(value) -> tuple[Path | None, str | None]`
-      into `library/paths.py`.
+- [x] **Path validation duplicated three times** — **resolved (2026-10-02)**:
+      `resolve_readable_dir(value) -> tuple[Path | None, str | None]` in
+      `library/paths.py` is now the one place that checks absolute /
+      resolvable / directory / readable and produces the user-facing
+      messages; `add_folder()`, `browse_directory()` and the scanner's
+      `_unavailable_reason()` all call it (the last wraps the reason in
+      its "Folder is unavailable" prefix).
 - [ ] **CSRF enforced two different ways**
       Blueprint hook `src/bookflow/admin/routes.py:50-54` vs inline
       `if not validate_csrf(): abort(400, ...)` at

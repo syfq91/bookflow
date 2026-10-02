@@ -11,6 +11,8 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from bookflow.library.paths import resolve_readable_dir
+
 MAX_ENTRIES = 500
 
 
@@ -45,25 +47,12 @@ def browse_directory(raw_path: str | None, root: Path) -> BrowseResult:
     if not value:
         return _list(resolved_root, resolved_root)
 
-    candidate = Path(value).expanduser()
-    if not candidate.is_absolute():
-        return BrowseResult(ok=False, error="Path must be absolute.")
-
-    try:
-        resolved = candidate.resolve(strict=True)
-    except FileNotFoundError:
-        return BrowseResult(ok=False, error="Folder does not exist.")
-    except OSError:
-        return BrowseResult(ok=False, error="Folder could not be resolved.")
-    except RuntimeError:
-        return BrowseResult(ok=False, error="Folder path contains a symlink loop.")
+    resolved, error = resolve_readable_dir(value)
+    if error is not None or resolved is None:
+        return BrowseResult(ok=False, error=error)
 
     if not resolved.is_relative_to(resolved_root):
         return BrowseResult(ok=False, error="Path is outside the browse root.")
-    if not resolved.is_dir():
-        return BrowseResult(ok=False, error="Path is not a directory.")
-    if not os.access(resolved, os.R_OK | os.X_OK):
-        return BrowseResult(ok=False, error="Folder is not readable.")
 
     return _list(resolved, resolved_root)
 
