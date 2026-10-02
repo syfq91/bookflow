@@ -1,8 +1,9 @@
 # AUDITS.md
 
-Open findings from a codebase audit (2026-09-30): dead code, refactor
-candidates and best-practice gaps. Research only — nothing here has been
-fixed yet. Tick items off as they land; delete entries once resolved.
+Open findings from a codebase audit (2026-09-30, refreshed 2026-10-02):
+dead code, refactor candidates and best-practice gaps. Research only —
+nothing here has been fixed yet (except section 1, resolved 2026-09-30).
+Tick items off as they land; delete entries once resolved.
 
 Scope: `src/bookflow/**`, `tests/**`, docs and deploy files. Vendored
 `src/bookflow/optimizer/epubkit/` was excluded. Every finding was verified
@@ -38,14 +39,16 @@ reached via dynamic `url_for`), all templates and `static/style.css`
 ## 2. Refactoring — duplication
 
 - [ ] **Five OPDS feed handlers repeat the same pagination/response block**
-      `src/bookflow/opds/routes.py:120-140`, `:143-170`, `:186-208`,
-      `:244-269`, `:275-303`. Each does `_page()` → `session_scope` with
-      `count(*)`/`max(updated_at)` → `_page_of_books` → `next_href` →
-      `acquisition_feed` → `Response`. Extract one private
-      `_acquisition_response(*, endpoint, title, condition, order,
-      url_kwargs)` and leave the routes as thin wrappers; `root_feed`
-      (`:67-117`) is the navigation-feed variant. Removes ~100 lines and
-      makes pagination fixes one-place.
+      `src/bookflow/opds/routes.py:165-186` (`_books_feed`), `:207-235`
+      (`_recent_feed`), `:501-527` (`_author_feed`), `:551-584`
+      (`_search_feed`), and `:333-429` (`_folder_level`). Each does
+      `_page()` → `session_scope` with `count(*)`/`max(updated_at)` →
+      `_page_of_books` → `next_href` → `acquisition_feed` → `Response`.
+      Extract one private `_acquisition_response(*, endpoint, title,
+      condition, order, url_kwargs)` and leave the routes as thin wrappers;
+      `_catalog_root` (`:92-144`) and `_folders_index` (`:317-330`) are the
+      navigation-feed variants that also duplicate folder-item generation.
+      Removes ~100 lines and makes pagination fixes one-place.
 - [ ] **Path validation duplicated three times**
       `src/bookflow/library/service.py:40-52` ≡
       `src/bookflow/library/browse.py:52-66` (byte-identical sequence and
@@ -60,18 +63,18 @@ reached via dynamic `url_for`), all templates and `static/style.css`
       blueprints is the root cause). Share one `require_csrf` decorator
       or register the same hook on `auth`.
 - [ ] **HTTP-Basic `before_request` duplicated**
-      `src/bookflow/opds/routes.py:46-51` ≡
+      `src/bookflow/opds/routes.py:54-59` ≡
       `src/bookflow/opds/progression.py:43-46`. Move to a shared
       `require_basic_auth(skip=...)` in `opds/auth.py`.
 - [ ] **File-download response duplicated**
-      `src/bookflow/admin/routes.py:203-213` ≡
-      `src/bookflow/opds/routes.py:345-354` (identical `send_file(...)`
+      `src/bookflow/admin/routes.py:202-212` ≡
+      `src/bookflow/opds/routes.py:623-632` (identical `send_file(...)`
       body). One `send_book_response(target)` helper.
 - [ ] **Scan trigger + flash logic duplicated in `admin`**
-      `src/bookflow/admin/routes.py:109-125` vs `:276-289`. Make
+      `src/bookflow/admin/routes.py:109-125` vs `:275-288`. Make
       `_run_scan()` return the flash payload; both callers flash it.
 - [ ] **Two `OperationalError` fallbacks with a duplicated string**
-      `src/bookflow/admin/routes.py:310-318` and `:321-334` return
+      `src/bookflow/admin/routes.py:309-318` and `:320-334` return
       *different shapes* for the same failure (health returns only
       `{"db_error"}`; dashboard returns a full default). `health.html:25`
       is only safe because of its guard. One `_stats_or_default()` helper
@@ -99,7 +102,7 @@ reached via dynamic `url_for`), all templates and `static/style.css`
 ## 3. Best practice / correctness
 
 - [ ] **Scanner holds a DB session across the whole filesystem walk**
-      `src/bookflow/library/scanner.py:92-113` — `session_scope()`
+      `src/bookflow/library/scanner.py:92-114` — `session_scope()`
       wraps `_unavailable_reason()`, `_walk()` and `_reconcile()` (which
       parses zip/PDF metadata per changed file). Violates "keep sessions
       short; never hold one across I/O" and keeps a pooled connection
@@ -119,18 +122,19 @@ reached via dynamic `url_for`), all templates and `static/style.css`
       `OPDS_LOG_LEVEL` to `Settings` and configure logging in
       `create_app`.
 - [ ] **Incomplete error coverage on `/opds/*`**
-      `opds/routes.py:394-396` handles only 404/403/500 — `405`, `400`,
-      `414` fall through to Werkzeug's HTML body, contradicting
-      `REFERENCE.md:64`. `opds/progression.py:102-114` has 400/404/409
-      but no 500/405, contradicting `ARCHITECTURE.md:441`. Register a
-      fuller code set against `_catalog_error` / `_problem`.
+      `opds/routes.py:672-682` handles only 404/500 (403 was removed in
+      dead-code cleanup) — `405`, `400`, `414` fall through to Werkzeug's
+      HTML body, contradicting `REFERENCE.md:64`.
+      `opds/progression.py:102-114` has 400/404/409 but no 500/405,
+      contradicting `ARCHITECTURE.md:441`. Register a fuller code set
+      against `_catalog_error` / `_problem`.
 - [ ] **`root_feed` swallows `OperationalError` while child feeds 500**
-      `src/bookflow/opds/routes.py:106-110` renders with `updated=None`
-      on a missing/migrated DB, so the root looks healthy while every
-      child feed fails. Pick one policy (blueprint-level handler for
-      `SQLAlchemyError`, or drop the special case).
+      `src/bookflow/opds/routes.py:101-105` (inside `_catalog_root`) renders
+      with `updated=None` on a missing/migrated DB, so the root looks
+      healthy while every child feed fails. Pick one policy (blueprint-level
+      handler for `SQLAlchemyError`, or drop the special case).
 - [ ] **Login failure returns HTTP 200**
-      `src/bookflow/auth/routes.py:75-80` — 429/503/400 are used
+      `src/bookflow/auth/routes.py:75-82` — 429/503/400 are used
       correctly elsewhere, so 200 makes success indistinguishable from
       failure for scripts and monitoring. Return 401 (or 422).
 - [ ] **Rate limiter keyed on `request.remote_addr` with no proxy
@@ -148,7 +152,7 @@ reached via dynamic `url_for`), all templates and `static/style.css`
 - [ ] **Cache hygiene vs invariant 4**
       - Deleting books/folders removes `optimized_books` rows
         (`library/scanner.py:156-158`,
-        `library/service.py:78-85`) but never the `.epub` files, so
+        `library/service.py:80-85`) but never the `.epub` files, so
         files accumulate (correctness holds — a row-less file is a miss —
         but `clear_optimized_cache()`'s file/row counts drift). Unlink
         `<book_id>.epub` on delete under `profile_lock`, or reconcile on
@@ -160,7 +164,7 @@ reached via dynamic `url_for`), all templates and `static/style.css`
         then fails and the concurrent download 500s. Skip `.tmp` (and
         sweep it separately) or gate on the locks.
 - [ ] **Optimizer failure logs omit the book id**
-      `src/bookflow/optimizer/service.py:124,138` — `"optimization
+      `src/bookflow/optimizer/service.py:124-128, 138` — `"optimization
       failed for %s profile"` names only the profile. Add `book_id`/file
       name; consider `logger.exception` at `:136`.
 - [ ] **Module-level `app = create_app()` at import time**
@@ -178,24 +182,26 @@ reached via dynamic `url_for`), all templates and `static/style.css`
 ## 4. Tests
 
 - [ ] **Scaffolding duplicated across ~400 lines**
-      `def alembic_config` copied **10×**, the shadowed `app` fixture
-      **8×**, `client`/`root` ~9×, `_login()` 5×
+      `def alembic_config` copied **11×**, the shadowed `app` fixture
+      **9×** (in test files), `client`/`root` ~10×, `_login()` 5×
       (`test_admin_books.py:57`, `test_auth.py:60`, `test_health.py:85`,
-      `test_library.py:75`, `test_optimizer.py:125`), plus four
-      differently-shaped seed helpers (`test_opds.py:128 _insert`,
+      `test_library.py:75`, `test_optimizer.py:125`), plus five
+      differently-shaped seed helpers (`test_opds.py:129 _insert`,
+      `test_opds_folders.py:118 _insert`,
       `test_device_catalogs.py:125 _insert_books`,
       `test_optimizer.py:99 _insert_book`, `test_progression.py:101
-      _book_id`). Drift is already visible: `test_opds.py:108
-      _entry_links()` returns a list, `test_device_catalogs.py:103
-      _entry_links()` returns a dict. Move `alembic_config`, a migrated
-      `app` fixture, `login_admin`, feed parsing and seeding into
-      `tests/conftest.py` / `tests/factories.py`, and update the
-      AGENTS.md fixture bullet in the same commit.
+      _book_id`). Drift is already visible: `test_opds.py:109
+      _entry_links()` returns a list, while
+      `test_device_catalogs.py:103` and `test_opds_folders.py:94`
+      return dicts. Move `alembic_config`, a migrated `app` fixture,
+      `login_admin`, feed parsing and seeding into `tests/conftest.py` /
+      `tests/factories.py`, and update the AGENTS.md fixture bullet in the
+      same commit.
 - [ ] **23 legacy `session.query()` calls** — AGENTS.md requires
       `select()`. Sites: `test_scanner.py:59,64,186,194,195`,
       `test_admin_books.py:248,269`,
-      `test_library.py:100,176,177,354,391,403,427,455,466,467,618`,
-      `test_optimizer.py:96`, `test_opds.py:125`,
+      `test_library.py:100,175,176,353,390,402,426,454,465,466,617`,
+      `test_optimizer.py:96`, `test_opds.py:126`,
       `test_database.py:60,77,97`. Mechanical swap to
       `session.scalars(select(...))` / `select(func.count(...))`.
 - [ ] **`test_unreadable_subdirectory_reports_partial` fails as root**
@@ -212,16 +218,17 @@ reached via dynamic `url_for`), all templates and `static/style.css`
 
 ## 5. Type hints / docstrings (lower priority)
 
-- [ ] Helper-layer gaps: `opds/generator.py:153 author_entry` (no return
+- [ ] Helper-layer gaps: `opds/generator.py:185 author_entry` (no return
       type), `opds/auth.py:19 authenticate` (untyped `authorization`),
-      `opds/routes.py:417,421,448,186,324` (no return types),
-      `opds/progression.py:125,156,180` (untyped params; `dict` →
-      `dict[str, object]`).
-- [ ] ~34 route handlers across `admin/routes.py`, `opds/routes.py`,
-      `auth/routes.py`, `app.py` lack `-> Response | str | tuple[...]`.
+      `opds/routes.py:591,596,601,605,624,636,655,660,668,674,755,759,786`
+      (no return types), `opds/progression.py:125,156,171,180` (untyped
+      params; `dict` → `dict[str, object]`).
+- [ ] ~35 route handlers across `admin/routes.py`, `opds/routes.py`,
+      `auth/routes.py`, `opds/progression.py`, `app.py` lack
+      `-> Response | str | tuple[...]`.
 - [ ] Structural typing: `list[dict[str, object]]`
       (`library/service.py:94`) and `dict[str, object]`
-      (`health/service.py:43`, `admin/routes.py:310,321`) — consumers are
+      (`health/service.py:43`, `admin/routes.py:309,320`) — consumers are
       Jinja templates, so typos surface as template errors. Consider a
       frozen dataclass / `TypedDict`.
 
@@ -229,8 +236,9 @@ reached via dynamic `url_for`), all templates and `static/style.css`
 
 - [ ] Four unused `noqa` directives (`RUF100`): `health/service.py:206`,
       `tests/conftest.py:13,14,15`.
-- [ ] Non-default ruff rules flag 44 `ARG` + 3 `SIM` + 1 `C4` + 1 `RUF059`
-      findings (mostly test fixture params — verify before acting).
+- [ ] Non-default ruff rules flag 55 findings across `ARG, SIM, C4, RUF059`
+      (49 `ARG` + 4 `SIM` + 1 `C4` + 1 `RUF059`, mostly test fixture
+      params — verify before acting).
 - [ ] `health/service.py:206` imports vendored `process_epub` for a
       health check (no execution) — harmless, but add a comment so it is
       not mistaken for a violation of invariant 2.
@@ -247,7 +255,7 @@ reached via dynamic `url_for`), all templates and `static/style.css`
   single credential, no secrets in logs; vendored epubkit untouched.
 - `os.environ` is read only in `config.py`.
 - `ruff check .` passes; `F401`/`F811` clean; no commented-out code, no
-  `TODO`/`FIXME`, no unreachable branches.
+  `TODO`/`FIXME`, no unreachable branches; test suite clean (268 tests).
 - No queries in Jinja templates; no N+1 (`list_folders`,
   `library_statistics`, `_query_stats` are aggregate; `get_folder` and
   `paths.py:24` are fixed 2-query lookups).
