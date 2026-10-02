@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from flask import (
     Blueprint,
-    abort,
     current_app,
     redirect,
     render_template,
@@ -13,14 +12,16 @@ from flask import (
     url_for,
 )
 
+from bookflow.auth.decorators import require_csrf
 from bookflow.auth.service import (
     ADMIN_SESSION_KEY,
     ensure_csrf_token,
     safe_next_target,
-    validate_csrf,
 )
 
 bp = Blueprint("auth", __name__)
+
+bp.before_request(require_csrf)
 
 
 @bp.get("/admin/login")
@@ -32,9 +33,6 @@ def login():
 
 @bp.post("/admin/login")
 def login_post():
-    if not validate_csrf():
-        abort(400, description="Invalid or missing CSRF token")
-
     limiter = current_app.extensions["login_rate_limiter"]
     verifier = current_app.extensions["password_verifier"]
     username = request.form.get("username", "")
@@ -84,7 +82,5 @@ def login_post():
 
 @bp.post("/admin/logout")
 def logout():
-    if not validate_csrf():
-        abort(400, description="Invalid or missing CSRF token")
     session.clear()
     return redirect(url_for("auth.login"))

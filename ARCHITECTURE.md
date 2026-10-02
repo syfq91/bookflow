@@ -217,7 +217,9 @@ directory itself is treated as rebuildable.
   successful login resets the counter.
 - CSRF: `ensure_csrf_token()` mints a session token (also exposed to Jinja
   as `csrf_token()`); `validate_csrf()` compares it to the submitted form
-  value. `safe_next_target()` restricts post-login redirects.
+  value; `require_csrf()` is the `before_request` hook that enforces it
+  on writes, registered by both the `auth` and `admin` blueprints.
+  `safe_next_target()` restricts post-login redirects.
 - `@login_required` guards every admin view; unauthenticated requests
   redirect to `/admin/login` with a validated `?next=`.
 - `auth/routes.py`: `GET/POST /admin/login`, `POST /admin/logout`.
@@ -345,7 +347,8 @@ directory itself is treated as rebuildable.
 
 ### 7.6 `admin/` — operational UI
 
-- Blueprint-wide `before_request` rejects any `POST/PUT/PATCH/DELETE`
+- Blueprint-wide `before_request` (`require_csrf()`, shared with the
+  `auth` blueprint) rejects any `POST/PUT/PATCH/DELETE`
   without a valid CSRF token (`400`) *before* views run.
 - Views: dashboard (`_dashboard_stats()` + health badges, degrades to a
   readable message when migrations are missing), folder CRUD + scan,

@@ -55,12 +55,11 @@ reached via dynamic `url_for`), all templates and `static/style.css`
       messages; `add_folder()`, `browse_directory()` and the scanner's
       `_unavailable_reason()` all call it (the last wraps the reason in
       its "Folder is unavailable" prefix).
-- [ ] **CSRF enforced two different ways**
-      Blueprint hook `src/bookflow/admin/routes.py:50-54` vs inline
-      `if not validate_csrf(): abort(400, ...)` at
-      `src/bookflow/auth/routes.py:35-36` and `:87-88` (different
-      blueprints is the root cause). Share one `require_csrf` decorator
-      or register the same hook on `auth`.
+- [x] **CSRF enforced two different ways** — **resolved (2026-10-02)**:
+      `require_csrf()` in `auth/decorators.py` is the single
+      write-method hook; `bp.before_request(require_csrf)` is registered
+      on both the `admin` and `auth` blueprints, so the inline
+      `validate_csrf()` checks in `login_post`/`logout` are gone.
 - [ ] **HTTP-Basic `before_request` duplicated**
       `src/bookflow/opds/routes.py:54-59` ≡
       `src/bookflow/opds/progression.py:43-46`. Move to a shared

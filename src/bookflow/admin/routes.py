@@ -18,8 +18,7 @@ from flask import (
 from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.exc import OperationalError
 
-from bookflow.auth.decorators import login_required
-from bookflow.auth.service import validate_csrf
+from bookflow.auth.decorators import login_required, require_csrf
 from bookflow.config import Settings
 from bookflow.database.database import session_scope
 from bookflow.database.models import Book, LibraryFolder, OptimizedBook
@@ -38,20 +37,13 @@ from bookflow.optimizer.service import clear_optimized_cache
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 
-_WRITE_METHODS = ("POST", "PUT", "PATCH", "DELETE")
+bp.before_request(require_csrf)
 
 _DASHBOARD_COMPONENTS = ("Database", "Library", "OPDS", "epubkit")
 
 PAGE_SIZE = 50
 
 FOLDER_SEGMENTS_LIMIT = 500
-
-
-@bp.before_request
-def _require_csrf_for_writes():
-    """Every state-changing admin request must carry a valid CSRF token."""
-    if request.method in _WRITE_METHODS and not validate_csrf():
-        abort(400, description="Invalid or missing CSRF token")
 
 
 @bp.get("/")
