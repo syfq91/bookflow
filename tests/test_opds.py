@@ -17,6 +17,7 @@ from bookflow.database.database import reset_engine, session_scope
 from bookflow.database.models import Book
 from bookflow.library.scanner import scan_folder
 from bookflow.library.service import add_folder
+from bookflow.opds import routes as opds_routes
 from factories import PNG_BYTES, make_epub, make_pdf
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -624,3 +625,27 @@ def test_unknown_opds_path_returns_xml_404(client, folder_id: int) -> None:
     assert resp.headers["Content-Type"] == "application/xml"
     root = ElementTree.fromstring(resp.data)
     assert root.findtext("message")
+
+
+def test_wrong_method_returns_xml_405(client, folder_id: int) -> None:
+    resp = client.post("/opds/books", headers=_headers())
+
+    assert resp.status_code == 405
+    assert resp.headers["Content-Type"] == "application/xml"
+    root = ElementTree.fromstring(resp.data)
+    assert root.findtext("code") == "405"
+
+
+def test_unhandled_error_returns_xml_500(client, monkeypatch) -> None:
+    client.application.config["PROPAGATE_EXCEPTIONS"] = False
+
+    def explode(*args, **kwargs):
+        raise RuntimeError("feed exploded")
+
+    monkeypatch.setattr(opds_routes, "acquisition_feed", explode)
+    resp = _get(client, "/opds/books")
+
+    assert resp.status_code == 500
+    assert resp.headers["Content-Type"] == "application/xml"
+    root = ElementTree.fromstring(resp.data)
+    assert root.findtext("code") == "500"

@@ -2,7 +2,8 @@
 
 Open findings from a codebase audit (2026-09-30, refreshed 2026-10-02):
 dead code, refactor candidates and best-practice gaps. Research only —
-nothing here has been fixed yet (except section 1, resolved 2026-09-30).
+nothing here has been fixed yet (section 1 resolved 2026-09-30; three
+items in §2/§3 resolved 2026-10-02).
 Tick items off as they land; delete entries once resolved.
 
 Scope: `src/bookflow/**`, `tests/**`, docs and deploy files. Vendored
@@ -38,17 +39,15 @@ reached via dynamic `url_for`), all templates and `static/style.css`
 
 ## 2. Refactoring — duplication
 
-- [ ] **Five OPDS feed handlers repeat the same pagination/response block**
-      `src/bookflow/opds/routes.py:165-186` (`_books_feed`), `:207-235`
-      (`_recent_feed`), `:501-527` (`_author_feed`), `:551-584`
-      (`_search_feed`), and `:333-429` (`_folder_level`). Each does
-      `_page()` → `session_scope` with `count(*)`/`max(updated_at)` →
-      `_page_of_books` → `next_href` → `acquisition_feed` → `Response`.
-      Extract one private `_acquisition_response(*, endpoint, title,
-      condition, order, url_kwargs)` and leave the routes as thin wrappers;
-      `_catalog_root` (`:92-144`) and `_folders_index` (`:317-330`) are the
-      navigation-feed variants that also duplicate folder-item generation.
-      Removes ~100 lines and makes pagination fixes one-place.
+- [x] **Five OPDS feed handlers repeat the same pagination/response block**
+      — **resolved (2026-10-02)**: `_book_page()` (count, `updated`
+      stamp, one page of rows) + `_acquisition_response()` (self/next
+      links, `acquisition_feed`, `Response`) in `opds/routes.py` now
+      build every acquisition feed; `_books_feed`, `_recent_feed`,
+      `_author_feed`, `_search_feed` and `_folder_level` are thin
+      wrappers, and `_page_of_books` is gone. `_catalog_root` /
+      `_folders_index` / `_authors_feed` keep their navigation feeds but
+      already shared `_registered_folders()` + `_folder_items()`.
 - [ ] **Path validation duplicated three times**
       `src/bookflow/library/service.py:40-52` ≡
       `src/bookflow/library/browse.py:52-66` (byte-identical sequence and
@@ -121,18 +120,38 @@ reached via dynamic `url_for`), all templates and `static/style.css`
       Scan results and cache-clear events never reach output. Add
       `OPDS_LOG_LEVEL` to `Settings` and configure logging in
       `create_app`.
-- [ ] **Incomplete error coverage on `/opds/*`**
-      `opds/routes.py:672-682` handles only 404/500 (403 was removed in
-      dead-code cleanup) — `405`, `400`, `414` fall through to Werkzeug's
-      HTML body, contradicting `REFERENCE.md:64`.
-      `opds/progression.py:102-114` has 400/404/409 but no 500/405,
-      contradicting `ARCHITECTURE.md:441`. Register a fuller code set
-      against `_catalog_error` / `_problem`.
-- [ ] **`root_feed` swallows `OperationalError` while child feeds 500**
-      `src/bookflow/opds/routes.py:101-105` (inside `_catalog_root`) renders
-      with `updated=None` on a missing/migrated DB, so the root looks
-      healthy while every child feed fails. Pick one policy (blueprint-level
-      handler for `SQLAlchemyError`, or drop the special case).
+- [x] **Incomplete error coverage on `/opds/*`**
+      — **resolved (2026-10-02)**: both blueprints register
+      `@bp.errorhandler(HTTPException)` (`opds/routes.py`
+      `error_document`, `opds/progression.py` `problem_document`), which
+      covers 400/405/414/416/500 *and* unhandled exceptions (they arrive
+      as `InternalServerError`); progression keeps the registry types for
+      400/404/409. A failed URL match never reaches a blueprint, so
+      `create_app` also registers an app-level handler that answers
+      `request.path` under `/opds/publications` with the problem document
+      and under `/opds` with the XML one, returning every other request
+      unchanged (admin stays HTML). `progression.py` gained a
+      `GET /<path:unknown>` rule so unknown ids are a problem document
+      instead of the catalog's XML 404. Tests: wrong-method + unhandled
+      500 in `test_opds.py`, wrong-method + non-numeric id in
+      `test_progression.py`, admin-405-stays-HTML in `test_app.py`.
+      Docs: `REFERENCE.md` (OPDS + progression error paragraphs) and
+      `ARCHITECTURE.md` (§7.3, error-by-surface table) updated.
+- [x] **`root_feed` swallows `OperationalError` while child feeds 500**
+      — **resolved (2026-10-02)**: the `try/except OperationalError`
+      around `max(updated_at)` in `_catalog_root` is gone. It could not
+      have helped anyway: `_registered_folders()` opens a session first
+      and would raise before it. A broken database now fails the root
+      feed the same way it fails every child.
+- [ ] **Routing failures skip the OPDS Basic-auth hook**
+      A failed URL match leaves `request.url_rule` unset, so
+      `request.blueprints` is empty and the blueprints'
+      `@bp.before_request` never runs: `POST /opds/books` now answers
+      `405` **without** credentials while `GET /opds/books` answers
+      `401`. Pre-existing (the body was HTML before); found while fixing
+      error coverage. Either call `authenticate()` from the app-level
+      fallback before returning the document (skip
+      `/opds/authentication`) or accept that routing errors are public.
 - [ ] **Login failure returns HTTP 200**
       `src/bookflow/auth/routes.py:75-82` — 429/503/400 are used
       correctly elsewhere, so 200 makes success indistinguishable from
@@ -220,8 +239,8 @@ reached via dynamic `url_for`), all templates and `static/style.css`
 
 - [ ] Helper-layer gaps: `opds/generator.py:185 author_entry` (no return
       type), `opds/auth.py:19 authenticate` (untyped `authorization`),
-      `opds/routes.py:591,596,601,605,624,636,655,660,668,674,755,759,786`
-      (no return types), `opds/progression.py:125,156,171,180` (untyped
+      `opds/routes.py:482,487,492,496,515,527,546,551,559,654,764`
+      (no return types), `opds/progression.py:143,174,189,198` (untyped
       params; `dict` → `dict[str, object]`).
 - [ ] ~35 route handlers across `admin/routes.py`, `opds/routes.py`,
       `auth/routes.py`, `opds/progression.py`, `app.py` lack
@@ -255,7 +274,7 @@ reached via dynamic `url_for`), all templates and `static/style.css`
   single credential, no secrets in logs; vendored epubkit untouched.
 - `os.environ` is read only in `config.py`.
 - `ruff check .` passes; `F401`/`F811` clean; no commented-out code, no
-  `TODO`/`FIXME`, no unreachable branches; test suite clean (268 tests).
+  `TODO`/`FIXME`, no unreachable branches; test suite clean (273 tests).
 - No queries in Jinja templates; no N+1 (`list_folders`,
   `library_statistics`, `_query_stats` are aggregate; `get_folder` and
   `paths.py:24` are fixed 2-query lookups).
@@ -266,8 +285,10 @@ reached via dynamic `url_for`), all templates and `static/style.css`
 
 ## Suggested order of attack
 
-1. **§2 OPDS feed helper + §3 error-handler set** — one file, ~120 lines
-   removed, fixes a docs contract break.
+1. ~~§2 OPDS feed helper + §3 error-handler set~~ **done (2026-10-02)** —
+   `_book_page`/`_acquisition_response`, `HTTPException` handlers on both
+   OPDS blueprints, an app-level fallback for routing failures, docs
+   refreshed, 5 new tests.
 2. **§3 scanner session split + `library_tree` limit** — correctness-
    adjacent, user-visible performance.
 3. **§4 test scaffolding + `session.query` migration** — biggest raw

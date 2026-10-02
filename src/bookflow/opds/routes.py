@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from xml.etree import ElementTree
@@ -17,8 +17,8 @@ from flask import (
     send_file,
     url_for,
 )
-from sqlalchemy import false, func, or_, select
-from sqlalchemy.exc import OperationalError
+from sqlalchemy import ColumnElement, and_, false, func, or_, select
+from werkzeug.exceptions import HTTPException
 
 from bookflow.database.database import session_scope
 from bookflow.database.models import Book, LibraryFolder
@@ -99,10 +99,7 @@ def _catalog_root(profile: str | None) -> Response:
     ep = _endpoints(profile)
     folders = _registered_folders()
     with session_scope() as session:
-        try:
-            updated = session.scalar(select(func.max(Book.updated_at)))
-        except OperationalError:
-            updated = None
+        updated = session.scalar(select(func.max(Book.updated_at)))
     links, entries = _folder_items(ep, folders, updated)
     if profile is None:
         for name, href in (
@@ -164,26 +161,12 @@ def x4_books_feed() -> Response:
 
 def _books_feed(profile: str | None) -> Response:
     ep = _endpoints(profile)
-    page = _page()
-    offset = (page - 1) * PAGE_SIZE
-    with session_scope() as session:
-        total = int(session.scalar(select(func.count(Book.id))) or 0)
-        updated = session.scalar(select(func.max(Book.updated_at)))
-        books = _page_of_books(session, offset)
-    next_href = (
-        url_for(ep.books, page=page + 1)
-        if offset + len(books) < total
-        else None
-    )
-    data = acquisition_feed(
+    return _acquisition_response(
+        _book_page(),
+        endpoint=ep.books,
         title=f"BookFlow — {_prefix(profile)}All Books",
-        updated=updated,
-        self_href=url_for(ep.books, page=page if page > 1 else None),
-        books=books,
-        next_href=next_href,
         profile=profile,
     )
-    return Response(data, content_type=ACQUISITION_TYPE)
 
 
 @bp.get("/recent")
@@ -206,33 +189,12 @@ def x4_recent_feed() -> Response:
 
 def _recent_feed(profile: str | None) -> Response:
     ep = _endpoints(profile)
-    page = _page()
-    offset = (page - 1) * PAGE_SIZE
-    with session_scope() as session:
-        total = int(session.scalar(select(func.count(Book.id))) or 0)
-        updated = session.scalar(select(func.max(Book.updated_at)))
-        books = list(
-            session.scalars(
-                select(Book)
-                .order_by(Book.created_at.desc(), Book.id.desc())
-                .offset(offset)
-                .limit(PAGE_SIZE)
-            )
-        )
-    next_href = (
-        url_for(ep.recent, page=page + 1)
-        if offset + len(books) < total
-        else None
-    )
-    data = acquisition_feed(
+    return _acquisition_response(
+        _book_page(order=(Book.created_at.desc(), Book.id.desc())),
+        endpoint=ep.recent,
         title=f"BookFlow — {_prefix(profile)}Recent",
-        updated=updated,
-        self_href=url_for(ep.recent, page=page if page > 1 else None),
-        books=books,
-        next_href=next_href,
         profile=profile,
     )
-    return Response(data, content_type=ACQUISITION_TYPE)
 
 
 # --- folders ----------------------------------------------------------------
@@ -334,14 +296,11 @@ def _folder_level(folder_id: int, profile: str | None) -> Response:
     ep = _endpoints(profile)
     path = _clean_path(request.args.get("path", ""))
     prefix = f"{path}/" if path else ""
-    page = _page()
-    offset = (page - 1) * PAGE_SIZE
 
-    scope = [Book.folder_id == folder_id]
+    scope: list[ColumnElement[bool]] = [Book.folder_id == folder_id]
     if prefix:
         scope.append(Book.relative_path.startswith(prefix, autoescape=True))
     rest = func.substr(Book.relative_path, len(prefix) + 1)
-    in_level = func.instr(rest, "/") == 0
 
     with session_scope() as session:
         folder = session.get(LibraryFolder, folder_id)
@@ -356,24 +315,6 @@ def _folder_level(folder_id: int, profile: str | None) -> Response:
             )
         )
         segments.sort(key=str.casefold)
-        total = int(
-            session.scalar(
-                select(func.count(Book.id)).where(*scope, in_level)
-            )
-            or 0
-        )
-        updated = session.scalar(
-            select(func.max(Book.updated_at)).where(*scope)
-        )
-        books = list(
-            session.scalars(
-                select(Book)
-                .where(*scope, in_level)
-                .order_by(_title_order())
-                .offset(offset)
-                .limit(PAGE_SIZE)
-            )
-        )
 
     segment_hrefs = [
         (
@@ -390,43 +331,30 @@ def _folder_level(folder_id: int, profile: str | None) -> Response:
         Link(SUBSECTION_REL, href, ACQUISITION_TYPE, title=segment)
         for segment, href in segment_hrefs
     ]
+    book_page = _book_page(
+        condition=and_(*scope, func.instr(rest, "/") == 0),
+        updated_condition=and_(*scope),
+    )
     entries = [
         nav_entry(
             entry_id=f"tag:bookflow,folder,{folder_id},{path}/{segment}",
             title=segment,
             href=href,
             link_type=ACQUISITION_TYPE,
-            updated=updated,
+            updated=book_page.updated,
         )
         for segment, href in segment_hrefs
     ]
     label = folder.name if not path else f"{folder.name} / {path}"
-    next_href = (
-        url_for(
-            ep.folder_level,
-            folder_id=folder_id,
-            path=path or None,
-            page=page + 1,
-        )
-        if offset + len(books) < total
-        else None
-    )
-    data = acquisition_feed(
+    return _acquisition_response(
+        book_page,
+        endpoint=ep.folder_level,
         title=f"BookFlow — {_prefix(profile)}{label}",
-        updated=updated,
-        self_href=url_for(
-            ep.folder_level,
-            folder_id=folder_id,
-            path=path or None,
-            page=page if page > 1 else None,
-        ),
-        books=books,
+        profile=profile,
+        url_kwargs={"folder_id": folder_id, "path": path or None},
         links=links,
         entries=entries,
-        next_href=next_href,
-        profile=profile,
     )
-    return Response(data, content_type=ACQUISITION_TYPE)
 
 
 # --- authors ----------------------------------------------------------------
@@ -500,31 +428,13 @@ def x4_author_feed(author: str) -> Response:
 
 def _author_feed(profile: str | None, author: str) -> Response:
     ep = _endpoints(profile)
-    page = _page()
-    offset = (page - 1) * PAGE_SIZE
-    with session_scope() as session:
-        condition = Book.authors == author
-        total = int(
-            session.scalar(select(func.count(Book.id)).where(condition)) or 0
-        )
-        updated = session.scalar(select(func.max(Book.updated_at)).where(condition))
-        books = _page_of_books(session, offset, condition)
-    next_href = (
-        url_for(ep.author, author=author, page=page + 1)
-        if offset + len(books) < total
-        else None
-    )
-    data = acquisition_feed(
+    return _acquisition_response(
+        _book_page(condition=Book.authors == author),
+        endpoint=ep.author,
         title=f"BookFlow — {_prefix(profile)}{author}",
-        updated=updated,
-        self_href=url_for(
-            ep.author, author=author, page=page if page > 1 else None
-        ),
-        books=books,
-        next_href=next_href,
         profile=profile,
+        url_kwargs={"author": author},
     )
-    return Response(data, content_type=ACQUISITION_TYPE)
 
 
 # --- search -----------------------------------------------------------------
@@ -551,37 +461,18 @@ def x4_search_feed() -> Response:
 def _search_feed(profile: str | None) -> Response:
     ep = _endpoints(profile)
     query = request.args.get("q", "").strip()
-    page = _page()
-    offset = (page - 1) * PAGE_SIZE
-    condition = _search_condition(query) if query else false()
-    with session_scope() as session:
-        total = int(
-            session.scalar(select(func.count(Book.id)).where(condition)) or 0
-        )
-        updated = session.scalar(select(func.max(Book.updated_at)).where(condition))
-        books = _page_of_books(session, offset, condition)
-    next_href = (
-        url_for(ep.search, q=query, page=page + 1)
-        if offset + len(books) < total
-        else None
+    title = (
+        f"BookFlow — {_prefix(profile)}Search: {query}"
+        if query
+        else f"BookFlow — {_prefix(profile)}Search"
     )
-    data = acquisition_feed(
-        title=(
-            f"BookFlow — {_prefix(profile)}Search: {query}"
-            if query
-            else f"BookFlow — {_prefix(profile)}Search"
-        ),
-        updated=updated,
-        self_href=url_for(
-            ep.search,
-            q=query or None,
-            page=page if page > 1 else None,
-        ),
-        books=books,
-        next_href=next_href,
+    return _acquisition_response(
+        _book_page(condition=_search_condition(query) if query else false()),
+        endpoint=ep.search,
+        title=title,
         profile=profile,
+        url_kwargs={"q": query or None},
     )
-    return Response(data, content_type=ACQUISITION_TYPE)
 
 
 # --- single book ------------------------------------------------------------
@@ -669,16 +560,24 @@ def unknown_path(unknown: str):
     abort(404)
 
 
-@bp.errorhandler(404)
-@bp.errorhandler(500)
-def _catalog_error(error):
-    description = getattr(error, "description", None) or "Request failed"
+@bp.errorhandler(HTTPException)
+def error_document(error: HTTPException) -> Response:
+    """Build the XML error document for a failure under ``/opds``.
+
+    Registering ``HTTPException`` instead of a fixed code list keeps rare
+    statuses (405, 414, 416, …) from falling through to Werkzeug's HTML
+    body. Unhandled exceptions reach this handler too, as an
+    ``InternalServerError``. Routing failures skip the blueprint and are
+    answered by ``create_app``'s fallback, which calls this directly.
+    """
+    status = error.code or 500
+    description = error.description or "Request failed"
     body = (
         '<?xml version="1.0" encoding="utf-8"?>'
-        f"<error><code>{error.code}</code>"
+        f"<error><code>{status}</code>"
         f"<message>{xml_escape(description)}</message></error>"
     )
-    return Response(body, status=error.code, content_type="application/xml")
+    return Response(body, status=status, content_type="application/xml")
 
 
 # --- helpers ----------------------------------------------------------------
@@ -756,11 +655,90 @@ def _title_order():
     return func.lower(func.coalesce(Book.title, Book.relative_path))
 
 
-def _page_of_books(session, offset: int, condition=None):
-    statement = select(Book).order_by(_title_order())
+@dataclass(frozen=True)
+class _BookPage:
+    """One page of books plus the numbers its feed links need."""
+
+    page: int
+    offset: int
+    total: int
+    updated: datetime | None
+    books: list[Book]
+
+
+def _book_page(
+    *,
+    condition: ColumnElement[bool] | None = None,
+    updated_condition: ColumnElement[bool] | None = None,
+    order: Sequence[ColumnElement] = (),
+) -> _BookPage:
+    """Fetch one page of books for an acquisition feed.
+
+    ``condition`` scopes the rows, the page total and — unless
+    ``updated_condition`` widens it — the feed's ``updated`` stamp.
+    ``order`` defaults to the A→Z title order.
+    """
+    page = _page()
+    offset = (page - 1) * PAGE_SIZE
+    count_stmt = select(func.count(Book.id))
+    updated_stmt = select(func.max(Book.updated_at))
+    books_stmt = select(Book).order_by(*(order or (_title_order(),)))
     if condition is not None:
-        statement = statement.where(condition)
-    return list(session.scalars(statement.offset(offset).limit(PAGE_SIZE)))
+        count_stmt = count_stmt.where(condition)
+        books_stmt = books_stmt.where(condition)
+    if updated_condition is None:
+        updated_condition = condition
+    if updated_condition is not None:
+        updated_stmt = updated_stmt.where(updated_condition)
+    with session_scope() as session:
+        total = int(session.scalar(count_stmt) or 0)
+        updated = session.scalar(updated_stmt)
+        books = list(
+            session.scalars(books_stmt.offset(offset).limit(PAGE_SIZE))
+        )
+    return _BookPage(
+        page=page,
+        offset=offset,
+        total=total,
+        updated=updated,
+        books=books,
+    )
+
+
+def _acquisition_response(
+    book_page: _BookPage,
+    *,
+    endpoint: str,
+    title: str,
+    profile: str | None,
+    url_kwargs: Mapping[str, object] | None = None,
+    links: Sequence[Link] = (),
+    entries: Sequence[ElementTree.Element] = (),
+) -> Response:
+    """Render one page of books as an acquisition feed response.
+
+    ``url_kwargs`` are the endpoint's non-pagination arguments (author
+    name, folder id, search terms); ``links``/``entries`` are the
+    navigation section rendered alongside the books.
+    """
+    extra = dict(url_kwargs or {})
+    page = book_page.page
+    next_href = (
+        url_for(endpoint, **extra, page=page + 1)
+        if book_page.offset + len(book_page.books) < book_page.total
+        else None
+    )
+    data = acquisition_feed(
+        title=title,
+        updated=book_page.updated,
+        self_href=url_for(endpoint, **extra, page=page if page > 1 else None),
+        books=book_page.books,
+        links=links,
+        entries=entries,
+        next_href=next_href,
+        profile=profile,
+    )
+    return Response(data, content_type=ACQUISITION_TYPE)
 
 
 def _optimized_download(book_id: int, profile: str) -> Response:

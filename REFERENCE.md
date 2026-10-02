@@ -59,7 +59,10 @@ folder indexes it immediately, and **Scan** re-indexes it:
 ## OPDS catalog
 
 Point any OPDS client at `/opds` using the admin credentials (HTTP Basic).
-All catalog responses are Atom/OPDS XML; errors under `/opds/*` are XML too.
+All catalog responses are Atom/OPDS XML and so are their errors, for every
+status — including `405` from a wrong method and `500` from a server
+fault. The progression endpoints under `/opds/publications` answer with
+RFC 7807 problem documents instead (see below).
 A `401` returns the OPDS Authentication Document
 (`application/opds-authentication+json`), which is also served publicly at
 `/opds/authentication`.
@@ -168,7 +171,7 @@ Errors are RFC 7807 documents (`application/problem+json`) carrying `type`
 and `title`, with `type` one of
 `https://registry.opds.io/error#progression-invalid-payload` (400),
 `https://registry.opds.io/error#progression-date` (409) or `about:blank`
-(404).
+(404 and anything else, such as `405` from a wrong method or `500`).
 
 **Conflict handling for clients.** Send `modified` from your own clock and
 keep the `modified` returned by the server for the next write. An

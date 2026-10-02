@@ -29,3 +29,10 @@ def test_factory_creates_data_dirs(settings: Settings) -> None:
 
 def test_settings_stored_on_config(app) -> None:
     assert isinstance(app.config["SETTINGS"], Settings)
+
+
+def test_error_outside_opds_keeps_flask_html(client) -> None:
+    response = client.post("/admin/")
+
+    assert response.status_code == 405
+    assert response.content_type.startswith("text/html")

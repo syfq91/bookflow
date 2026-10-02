@@ -263,8 +263,17 @@ directory itself is treated as rebuildable.
   - book paths come from `library.paths.book_file()` (§7.2) — the **only**
     function that turns a book row into a path, so URL input can never
     escape the library;
-  - blueprint-scoped `@bp.errorhandler(404/403/500)` render XML errors —
-    scoped to the blueprint so admin pages keep Flask's HTML error pages;
+  - blueprint-scoped `@bp.errorhandler(HTTPException)` renders XML errors
+    for every status — plus unhandled exceptions, which arrive as an
+    `InternalServerError` — scoped to the blueprint so admin pages keep
+    Flask's HTML error pages. Routing failures never reach a blueprint
+    (there is no matched URL rule, so `request.blueprints` is empty);
+    `create_app` registers an app-level handler that answers those under
+    `/opds` with the same documents and leaves everything else alone;
+  - every acquisition feed is built in two steps — `_book_page()` fetches
+    one page (total, `updated` stamp, rows) and `_acquisition_response()`
+    renders it — so counts, `self`/`rel="next"` links and the response
+    type live in one place;
   - pagination: 50 entries per page with a `rel="next"` link.
 - `generator.py` — pure builders over ElementTree: `navigation_feed()`,
   `acquisition_feed()`, `book_entry()`. Each entry carries acquisition,
@@ -286,7 +295,7 @@ directory itself is treated as rebuildable.
     *equal* → `200` replay, *newer* → store and return `201`/`200`;
   - errors are RFC 7807 `application/problem+json` with registry types
     (`…#progression-invalid-payload`, `…#progression-date`, `about:blank`
-    for 404);
+    for 404 and any other status);
   - one `progressions` row per book — progression belongs to the logical
     book, never to a cache profile.
 
@@ -437,8 +446,8 @@ threads (`check_same_thread=False` + WAL-free default journal).
 
 | Surface | Style |
 | ------- | ----- |
-| `/opds/*` | blueprint XML handlers (`application/xml`, 404/403/500) |
-| progression | RFC 7807 `application/problem+json` (400/404/409) |
+| `/opds/*` | blueprint XML handler for every `HTTPException`, plus the app-level fallback in `create_app` for routing failures that never reach a blueprint |
+| progression | RFC 7807 `application/problem+json` (registry `type` for 400/404/409, `about:blank` for everything else) |
 | `/admin/*` | Flask's default HTML error pages; forms show inline/flash messages |
 | auth failures | `401` + auth document (OPDS) or rendered login (admin) |
 

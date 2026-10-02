@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 
 from flask import Blueprint, Response, abort, current_app, request
 from sqlalchemy import select
+from werkzeug.exceptions import HTTPException
 
 from bookflow.database.database import session_scope
 from bookflow.database.models import Book, Progression
@@ -24,7 +25,7 @@ INVALID_PAYLOAD_TITLE = (
 )
 STALE_TYPE = "https://registry.opds.io/error#progression-date"
 STALE_TITLE = "A more recent progression point is already available."
-NOT_FOUND_TYPE = "about:blank"
+BLANK_TYPE = "about:blank"
 NOT_FOUND_TITLE = "The requested publication was not found."
 
 EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
@@ -96,22 +97,39 @@ def update_publication_progression(book_id: int):
     )
 
 
+@bp.get("/<path:unknown>")
+def unknown_publication_path(unknown: str):
+    """Own unmatched paths under this prefix.
+
+    Without this rule the catalog blueprint's ``/<path:unknown>`` answers
+    them, and the client would get an XML catalog error instead of an RFC
+    7807 problem document.
+    """
+    abort(404)
+
+
 # --- errors -----------------------------------------------------------------
 
 
-@bp.errorhandler(400)
-def _invalid_payload(error):
-    return _problem(400, INVALID_PAYLOAD_TYPE, INVALID_PAYLOAD_TITLE)
+@bp.errorhandler(HTTPException)
+def problem_document(error: HTTPException) -> Response:
+    """Build the RFC 7807 document for a failure under ``/opds/publications``.
 
-
-@bp.errorhandler(404)
-def _not_found(error):
-    return _problem(404, NOT_FOUND_TYPE, NOT_FOUND_TITLE)
-
-
-@bp.errorhandler(409)
-def _stale(error):
-    return _problem(409, STALE_TYPE, STALE_TITLE)
+    The registry types cover the statuses this endpoint defines itself:
+    a malformed payload, an unknown publication, a stale progression
+    point. Anything else — 405 from a wrong method, 500 from an
+    unhandled exception — uses a blank type with the status' summary.
+    Routing failures skip the blueprint and are answered by
+    ``create_app``'s fallback, which calls this directly.
+    """
+    status = error.code or 500
+    if status == 400:
+        return _problem(status, INVALID_PAYLOAD_TYPE, INVALID_PAYLOAD_TITLE)
+    if status == 404:
+        return _problem(status, BLANK_TYPE, NOT_FOUND_TITLE)
+    if status == 409:
+        return _problem(status, STALE_TYPE, STALE_TITLE)
+    return _problem(status, BLANK_TYPE, error.description or error.name)
 
 
 def _problem(status: int, type_uri: str, title: str) -> Response:

@@ -400,3 +400,28 @@ def test_put_requires_auth_and_returns_document_on_401(
 
     assert resp.status_code == 401
     assert resp.headers["Content-Type"] == AUTH_TYPE
+
+
+def test_non_numeric_publication_id_returns_problem(client, folder_id: int) -> None:
+    resp = _get(client, "/opds/publications/not-a-number/progression")
+
+    assert resp.status_code == 404
+    assert resp.headers["Content-Type"] == PROBLEM_TYPE
+    document = json.loads(resp.data)
+    assert document["type"] == "about:blank"
+    assert document["title"]
+
+
+def test_wrong_method_returns_problem(client, folder_id: int) -> None:
+    resp = client.post(
+        "/opds/publications/1/progression",
+        data=json.dumps(_document()),
+        content_type=PROGRESSION_TYPE,
+        headers=_headers(),
+    )
+
+    assert resp.status_code == 405
+    assert resp.headers["Content-Type"] == PROBLEM_TYPE
+    document = json.loads(resp.data)
+    assert document["type"] == "about:blank"
+    assert document["title"]

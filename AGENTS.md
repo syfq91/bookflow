@@ -67,7 +67,10 @@ pkill -f "[f]lask --app bookflow.app run"
   I/O or renders.
 - **Web:** blueprints only (auth, admin, opds, progression); register new
   ones in `create_app`. OPDS errors must be blueprint-scoped
-  (`@bp.errorhandler`) so admin pages keep HTML error pages. Every
+  (`@bp.errorhandler`) so admin pages keep HTML error pages — the single
+  app-level `HTTPException` handler in `create_app` exists only for
+  routing failures (a failed URL match has no blueprint to dispatch to)
+  and must return every other request unchanged. Every
   state-changing admin route is automatically CSRF-checked by the
   blueprint's `before_request` — views just read the form.
 - **Templates:** server-rendered Jinja extending `layout.html`; CSRF token
