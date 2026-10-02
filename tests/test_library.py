@@ -16,7 +16,12 @@ from bookflow.database.models import Book, LibraryFolder
 from bookflow.library import browse as browse_module
 from bookflow.library.browse import browse_directory
 from bookflow.library.scanner import folder_lock, scan_folder
-from bookflow.library.service import add_folder, list_folders, remove_folder
+from bookflow.library.service import (
+    add_folder,
+    get_folder,
+    list_folders,
+    remove_folder,
+)
 from factories import alembic_config, csrf_token, login_admin, make_epub
 
 ADMIN_PASSWORD = "library-pass"
@@ -157,6 +162,18 @@ def test_list_folders_reports_stats(db, root: Path) -> None:
     assert folders[0]["size"] == (root / "dune.epub").stat().st_size
     assert folders[0]["last_scan_status"] == "ok"
     assert folders[0]["last_scan_error"] is None
+
+
+def test_get_folder_matches_the_list_entry(db, root: Path) -> None:
+    make_epub(root / "dune.epub", title="Dune")
+    result = add_folder(str(root))
+    assert result.folder_id is not None
+    scan_folder(result.folder_id, EXTENSIONS)
+
+    folder = get_folder(result.folder_id)
+
+    assert folder == list_folders()[0]
+    assert get_folder(4242) is None
 
 
 # --- browse service ---------------------------------------------------------

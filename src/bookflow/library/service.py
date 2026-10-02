@@ -73,8 +73,17 @@ def remove_folder(folder_id: int) -> bool:
 
 def get_folder(folder_id: int) -> dict[str, object] | None:
     """Return display data for one folder, or None when unknown."""
-    folders = {folder["id"]: folder for folder in list_folders()}
-    return folders.get(folder_id)
+    with session_scope() as session:
+        folder = session.get(LibraryFolder, folder_id)
+        if folder is None:
+            return None
+        books, size = session.execute(
+            select(
+                func.count(Book.id),
+                func.coalesce(func.sum(Book.file_size), 0),
+            ).where(Book.folder_id == folder_id)
+        ).one()
+        return _folder_data(folder, books, size)
 
 
 def list_folders() -> list[dict[str, object]]:
@@ -95,16 +104,21 @@ def list_folders() -> list[dict[str, object]]:
             if row[0] is not None
         }
         return [
-            {
-                "id": folder.id,
-                "path": folder.path,
-                "name": folder.name,
-                "books": stats.get(folder.id, (0, 0))[0],
-                "size": int(stats.get(folder.id, (0, 0))[1]),
-                "last_scan_at": folder.last_scan_at,
-                "last_scan_duration": folder.last_scan_duration,
-                "last_scan_status": folder.last_scan_status,
-                "last_scan_error": folder.last_scan_error,
-            }
+            _folder_data(folder, *stats.get(folder.id, (0, 0)))
             for folder in folders
         ]
+
+
+def _folder_data(folder: LibraryFolder, books: int, size: int) -> dict[str, object]:
+    """The row shape shared by the folder list and the single-folder lookup."""
+    return {
+        "id": folder.id,
+        "path": folder.path,
+        "name": folder.name,
+        "books": int(books),
+        "size": int(size),
+        "last_scan_at": folder.last_scan_at,
+        "last_scan_duration": folder.last_scan_duration,
+        "last_scan_status": folder.last_scan_status,
+        "last_scan_error": folder.last_scan_error,
+    }
