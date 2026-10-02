@@ -65,10 +65,12 @@ reached via dynamic `url_for`), all templates and `static/style.css`
       the one hook; the catalog registers it with
       `partial(..., skip="opds.authentication")`, the progression
       blueprint registers it plain.
-- [ ] **File-download response duplicated**
-      `src/bookflow/admin/routes.py:223-232` ≡
-      `src/bookflow/opds/routes.py:514-523` (identical `send_file(...)`
-      body). One `send_book_response(target)` helper.
+- [x] **File-download response duplicated** — **resolved (2026-10-02)**:
+      `send_book_response(target, *, download_name=None, mimetype=None)`
+      in `library/paths.py` next to `book_file()` streams the attachment
+      (`conditional=True`, MIME type from `book_mime_type()`); it serves
+      the admin original download, `/opds/download/<id>` and the X3/X4
+      optimized download (which only overrides `download_name`).
 - [ ] **Scan trigger + flash logic duplicated in `admin`**
       `src/bookflow/admin/routes.py:106-110` (`folder_create`) vs
       `:119-129` (`folder_scan`), both calling `_run_scan()` at

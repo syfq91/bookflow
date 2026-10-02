@@ -3,7 +3,8 @@
 This is the single source of book paths: every download, cover or
 optimization resolves a book through :func:`book_file`, never through
 filesystem paths built from user input. Directory paths chosen by the
-admin are validated by :func:`resolve_readable_dir`.
+admin are validated by :func:`resolve_readable_dir`, and resolved files
+are streamed by :func:`send_book_response`.
 """
 
 from __future__ import annotations
@@ -11,10 +12,11 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from flask import abort
+from flask import Response, abort, send_file
 
 from bookflow.database.database import session_scope
 from bookflow.database.models import Book
+from bookflow.opds.generator import book_mime_type
 
 
 def resolve_readable_dir(value: str) -> tuple[Path | None, str | None]:
@@ -54,3 +56,19 @@ def book_file(book_id: int) -> Path:
     if not target.is_relative_to(root) or not target.is_file():
         abort(404)
     return target
+
+
+def send_book_response(
+    target: Path,
+    *,
+    download_name: str | None = None,
+    mimetype: str | None = None,
+) -> Response:
+    """Stream an already-resolved book file as a conditional attachment."""
+    return send_file(
+        target,
+        mimetype=mimetype or book_mime_type(target.name),
+        as_attachment=True,
+        download_name=download_name or target.name,
+        conditional=True,
+    )

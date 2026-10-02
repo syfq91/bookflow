@@ -91,7 +91,8 @@ bookflow/
 │   ├── library/                  filesystem → index
 │   │   ├── service.py            register/list/remove folders
 │   │   ├── browse.py             clamped directory listing for the picker
-│   │   ├── paths.py              book_file(): the single source of book paths
+│   │   ├── paths.py              book_file(): the single source of book paths,
+│   │                             send_book_response(): stream them as downloads
 │   │   ├── scanner.py            walk, reconcile, scan statistics
 │   │   └── metadata.py           EPUB/PDF metadata + on-demand cover
 │   │
@@ -238,6 +239,11 @@ directory itself is treated as rebuildable.
 - `paths.book_file(book_id)` turns a book row into an on-disk path:
   root containment via `resolve()` + `is_relative_to()`, `404` on
   anything outside the root. Shared by the OPDS and admin blueprints.
+  `paths.send_book_response(target, download_name=…, mimetype=…)`
+  streams an already-resolved file as a conditional attachment (MIME
+  type from `opds.generator.book_mime_type()`), so the admin original
+  download, `/opds/download/<id>` and the X3/X4 optimized download all
+  share one response builder.
 - `scanner.scan_folder(folder_id, extensions)`:
   - a per-folder `threading.Lock` makes concurrent scans of the same folder
     fail fast with `ScanInProgress` → HTTP `409`;

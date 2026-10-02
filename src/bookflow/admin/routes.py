@@ -12,7 +12,6 @@ from flask import (
     redirect,
     render_template,
     request,
-    send_file,
     url_for,
 )
 from sqlalchemy import ColumnElement, func, select
@@ -24,7 +23,7 @@ from bookflow.database.database import session_scope
 from bookflow.database.models import Book, LibraryFolder, OptimizedBook
 from bookflow.health import HealthCheck, library_statistics, run_checks
 from bookflow.library.browse import BrowseResult, browse_directory
-from bookflow.library.paths import book_file
+from bookflow.library.paths import book_file, send_book_response
 from bookflow.library.scanner import ScanInProgress, ScanResult, scan_folder
 from bookflow.library.service import (
     add_folder,
@@ -32,7 +31,6 @@ from bookflow.library.service import (
     list_folders,
     remove_folder,
 )
-from bookflow.opds.generator import book_mime_type
 from bookflow.optimizer.service import clear_optimized_cache
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
@@ -214,14 +212,7 @@ def library_tree(folder_id: int):
 @bp.get("/books/<int:book_id>/download")
 @login_required
 def book_download(book_id: int):
-    target = book_file(book_id)
-    return send_file(
-        target,
-        mimetype=book_mime_type(target.name),
-        as_attachment=True,
-        download_name=target.name,
-        conditional=True,
-    )
+    return send_book_response(book_file(book_id))
 
 
 @bp.post("/cache/clear")

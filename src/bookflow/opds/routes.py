@@ -14,7 +14,6 @@ from flask import (
     Response,
     abort,
     request,
-    send_file,
     url_for,
 )
 from sqlalchemy import ColumnElement, and_, false, func, or_, select
@@ -23,7 +22,7 @@ from werkzeug.exceptions import HTTPException
 from bookflow.database.database import session_scope
 from bookflow.database.models import Book, LibraryFolder
 from bookflow.library.metadata import extract_cover
-from bookflow.library.paths import book_file
+from bookflow.library.paths import book_file, send_book_response
 from bookflow.opds.auth import (
     AUTH_DOCUMENT_TYPE,
     authentication_document,
@@ -37,7 +36,6 @@ from bookflow.opds.generator import (
     Link,
     acquisition_feed,
     author_entry,
-    book_mime_type,
     nav_entry,
     navigation_feed,
 )
@@ -507,14 +505,7 @@ def _book_feed(book_id: int, profile: str | None):
 
 @bp.get("/download/<int:book_id>")
 def download(book_id: int):
-    target = book_file(book_id)
-    return send_file(
-        target,
-        mimetype=book_mime_type(target.name),
-        as_attachment=True,
-        download_name=target.name,
-        conditional=True,
-    )
+    return send_book_response(book_file(book_id))
 
 
 @bp.get("/cover/<int:book_id>")
@@ -746,13 +737,7 @@ def _optimized_download(book_id: int, profile: str) -> Response:
             500,
             description="The optimized publication could not be generated.",
         )
-    return send_file(
-        optimized,
-        mimetype="application/epub+zip",
-        as_attachment=True,
-        download_name=source.name,
-        conditional=True,
-    )
+    return send_book_response(optimized, download_name=source.name)
 
 
 def _search_condition(query: str):
