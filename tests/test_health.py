@@ -7,28 +7,18 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from alembic import command
-from alembic.config import Config
 from sqlalchemy import select
 
-from bookflow.app import create_app
 from bookflow.config import Settings
-from bookflow.database.database import reset_engine, session_scope
+from bookflow.database.database import session_scope
 from bookflow.database.models import Book, LibraryFolder, OptimizedBook
 from bookflow.library.scanner import scan_folder
 from bookflow.library.service import add_folder
-from factories import csrf_token, make_epub, make_pdf
+from factories import login_admin, make_epub, make_pdf
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
 PASSWORD = "health-pass"
 EXTENSIONS = (".epub", ".pdf")
 PROGRESSION_TYPE = "application/opds-progression+json"
-
-
-def alembic_config(database_url: str) -> Config:
-    cfg = Config(str(REPO_ROOT / "alembic.ini"))
-    cfg.set_main_option("sqlalchemy.url", database_url)
-    return cfg
 
 
 # --- fixtures ---------------------------------------------------------------
@@ -39,39 +29,14 @@ def health_settings(settings: Settings) -> Settings:
     return replace(settings, admin_username="admin", admin_password=PASSWORD)
 
 
-def _build_app(health_settings: Settings, *, migrate: bool):
-    reset_engine()
-    application = create_app(health_settings)
-    application.config["TESTING"] = True
-    if migrate:
-        command.upgrade(alembic_config(health_settings.database_url), "head")
-    return application
+@pytest.fixture
+def app(build_app, health_settings: Settings):
+    return build_app(health_settings)
 
 
 @pytest.fixture
-def app(health_settings: Settings):
-    application = _build_app(health_settings, migrate=True)
-    yield application
-    reset_engine()
-
-
-@pytest.fixture
-def client(app):
-    return app.test_client()
-
-
-@pytest.fixture
-def unmigrated_client(health_settings: Settings):
-    application = _build_app(health_settings, migrate=False)
-    yield application.test_client()
-    reset_engine()
-
-
-@pytest.fixture
-def root(tmp_path: Path) -> Path:
-    path = tmp_path / "books"
-    path.mkdir()
-    return path
+def unmigrated_client(build_app, health_settings: Settings):
+    return build_app(health_settings, migrate=False).test_client()
 
 
 @pytest.fixture
@@ -82,20 +47,8 @@ def folder_id(client, root: Path) -> int:
     return result.folder_id
 
 
-def _login(client) -> None:
-    resp = client.post(
-        "/admin/login",
-        data={
-            "csrf_token": csrf_token(client),
-            "username": "admin",
-            "password": PASSWORD,
-        },
-    )
-    assert resp.status_code == 302
-
-
 def _health(client):
-    _login(client)
+    login_admin(client, password=PASSWORD)
     return client.get("/admin/health")
 
 
@@ -251,7 +204,7 @@ def test_dashboard_shows_cache_sizes_and_health(
             )
         )
 
-    _login(client)
+    login_admin(client, password=PASSWORD)
     resp = client.get("/admin/")
 
     assert resp.status_code == 200
@@ -265,7 +218,7 @@ def test_dashboard_shows_cache_sizes_and_health(
 def test_dashboard_still_renders_without_migrations(
     unmigrated_client,
 ) -> None:
-    _login(unmigrated_client)
+    login_admin(unmigrated_client, password=PASSWORD)
 
     resp = unmigrated_client.get("/admin/")
 

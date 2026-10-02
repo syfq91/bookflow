@@ -1,4 +1,4 @@
-"""Factories for building sample ebook files in tests."""
+"""Shared test helpers: sample ebook files, index seeds, login, feed parsing."""
 
 from __future__ import annotations
 
@@ -7,8 +7,19 @@ import mimetypes
 import secrets
 import zipfile
 from pathlib import Path
+from xml.etree import ElementTree
 
+from alembic.config import Config
+from flask import Response
 from pypdf import PdfWriter
+
+from bookflow.database.database import session_scope
+from bookflow.database.models import Book
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+ATOM = "http://www.w3.org/2005/Atom"
+NS = {"a": ATOM}
 
 # 1x1 transparent PNG
 PNG_BYTES = base64.b64decode(
@@ -129,3 +140,90 @@ def csrf_token(client) -> str:
             token = secrets.token_urlsafe(32)
             sess["csrf_token"] = token
         return token
+
+
+def alembic_config(database_url: str) -> Config:
+    """Alembic config pointed at the test database."""
+    cfg = Config(str(REPO_ROOT / "alembic.ini"))
+    cfg.set_main_option("sqlalchemy.url", database_url)
+    return cfg
+
+
+def login_admin(
+    client,
+    *,
+    password: str,
+    username: str = "admin",
+    next_target: str = "",
+) -> Response:
+    """POST /admin/login with a valid CSRF token; return the response."""
+    return client.post(
+        "/admin/login",
+        data={
+            "csrf_token": csrf_token(client),
+            "username": username,
+            "password": password,
+            "next": next_target,
+        },
+    )
+
+
+def insert_books(folder_id: int, specs: list[dict]) -> list[int]:
+    """Insert book rows directly (no files needed) and return their ids."""
+    ids: list[int] = []
+    with session_scope() as session:
+        for index, spec in enumerate(specs):
+            fields = {
+                "folder_id": folder_id,
+                "relative_path": spec.get("path", f"book{index}.epub"),
+                "title": spec.get("title"),
+                "authors": spec.get("authors"),
+                "publisher": spec.get("publisher"),
+                "language": spec.get("language"),
+                "isbn": spec.get("isbn"),
+                "description": spec.get("description"),
+                "series": spec.get("series"),
+                "file_format": spec.get("file_format"),
+                "file_size": spec.get("file_size"),
+            }
+            if "created_at" in spec:
+                fields["created_at"] = spec["created_at"]
+            book = Book(**fields)
+            session.add(book)
+            session.flush()
+            ids.append(book.id)
+    return ids
+
+
+# --- feed parsing -----------------------------------------------------------
+
+
+def parse_feed(resp) -> ElementTree.Element:
+    """Parse an Atom response body, asserting the request succeeded."""
+    assert resp.status_code == 200
+    return ElementTree.fromstring(resp.data)
+
+
+def feed_entries(feed: ElementTree.Element) -> list[ElementTree.Element]:
+    return feed.findall("a:entry", NS)
+
+
+def feed_titles(feed: ElementTree.Element) -> list[str]:
+    return [
+        entry.findtext("a:title", namespaces=NS) for entry in feed_entries(feed)
+    ]
+
+
+def feed_links(feed: ElementTree.Element) -> list[ElementTree.Element]:
+    return feed.findall("a:link", NS)
+
+
+def entry_links(entry: ElementTree.Element) -> list[ElementTree.Element]:
+    return entry.findall("a:link", NS)
+
+
+def links_by_rel(links) -> dict[str, list[ElementTree.Element]]:
+    grouped: dict[str, list[ElementTree.Element]] = {}
+    for link in links:
+        grouped.setdefault(link.get("rel", ""), []).append(link)
+    return grouped

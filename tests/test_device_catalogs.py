@@ -6,19 +6,25 @@ from pathlib import Path
 from xml.etree import ElementTree
 
 import pytest
-from alembic import command
-from alembic.config import Config
 from sqlalchemy import select
 
-from bookflow.app import create_app
 from bookflow.config import Settings
-from bookflow.database.database import reset_engine, session_scope
+from bookflow.database.database import session_scope
 from bookflow.database.models import Book
 from bookflow.library.scanner import scan_folder
 from bookflow.library.service import add_folder
-from factories import make_epub, make_pdf
+from factories import (
+    entry_links,
+    feed_entries,
+    feed_links,
+    feed_titles,
+    insert_books,
+    links_by_rel,
+    make_epub,
+    make_pdf,
+    parse_feed,
+)
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
 PASSWORD = "opds-pass"
 EXTENSIONS = (".epub", ".pdf")
 
@@ -31,12 +37,6 @@ PROGRESSION_REL = "http://opds-spec.org/progression"
 SUBSECTION_REL = "subsection"
 
 
-def alembic_config(database_url: str) -> Config:
-    cfg = Config(str(REPO_ROOT / "alembic.ini"))
-    cfg.set_main_option("sqlalchemy.url", database_url)
-    return cfg
-
-
 # --- fixtures ---------------------------------------------------------------
 
 
@@ -46,25 +46,8 @@ def opds_settings(settings: Settings) -> Settings:
 
 
 @pytest.fixture
-def app(opds_settings: Settings):
-    reset_engine()
-    application = create_app(opds_settings)
-    application.config["TESTING"] = True
-    command.upgrade(alembic_config(opds_settings.database_url), "head")
-    yield application
-    reset_engine()
-
-
-@pytest.fixture
-def client(app):
-    return app.test_client()
-
-
-@pytest.fixture
-def root(tmp_path: Path) -> Path:
-    path = tmp_path / "books"
-    path.mkdir()
-    return path
+def app(build_app, opds_settings: Settings):
+    return build_app(opds_settings)
 
 
 @pytest.fixture
@@ -87,34 +70,10 @@ def _get(client, path: str):
     return client.get(path, headers=_headers())
 
 
-def _parse(resp) -> ElementTree.Element:
-    assert resp.status_code == 200
-    return ElementTree.fromstring(resp.data)
-
-
-def _entries(feed: ElementTree.Element) -> list[ElementTree.Element]:
-    return feed.findall("a:entry", NS)
-
-
-def _titles(feed: ElementTree.Element) -> list[str]:
-    return [entry.findtext("a:title", namespaces=NS) for entry in _entries(feed)]
-
-
-def _entry_links(entry: ElementTree.Element) -> dict[str, list]:
-    grouped: dict[str, list] = {}
-    for link in entry.findall("a:link", NS):
-        grouped.setdefault(link.get("rel", ""), []).append(link)
-    return grouped
-
-
-def _feed_links(feed: ElementTree.Element) -> list[ElementTree.Element]:
-    return feed.findall("a:link", NS)
-
-
 def _section_titles(feed: ElementTree.Element) -> dict[str, str]:
     return {
         link.get("title", ""): link.get("href", "")
-        for link in _feed_links(feed)
+        for link in feed_links(feed)
         if link.get("rel") == SUBSECTION_REL
     }
 
@@ -122,8 +81,8 @@ def _section_titles(feed: ElementTree.Element) -> dict[str, str]:
 def _entry_sections(feed: ElementTree.Element) -> dict[str, str]:
     """Section title → href taken from the feed's navigation entries."""
     sections: dict[str, str] = {}
-    for entry in _entries(feed):
-        links = _entry_links(entry).get(SUBSECTION_REL, [])
+    for entry in feed_entries(feed):
+        links = links_by_rel(entry_links(entry)).get(SUBSECTION_REL, [])
         if links:
             title = entry.findtext("a:title", namespaces=NS) or ""
             sections[title] = links[0].get("href", "")
@@ -142,15 +101,13 @@ def _book_id(title: str) -> int:
 
 
 def _insert_books(folder_id: int, count: int) -> None:
-    with session_scope() as session:
-        for index in range(count):
-            session.add(
-                Book(
-                    folder_id=folder_id,
-                    relative_path=f"book{index:03d}.epub",
-                    title=f"Book {index:03d}",
-                )
-            )
+    insert_books(
+        folder_id,
+        [
+            {"path": f"book{index:03d}.epub", "title": f"Book {index:03d}"}
+            for index in range(count)
+        ],
+    )
 
 
 def _mixed_library(root: Path, folder_id: int) -> None:
@@ -163,11 +120,11 @@ def _mixed_library(root: Path, folder_id: int) -> None:
 
 
 def test_root_feed_links_device_catalogs(client, folder_id) -> None:
-    feed = _parse(_get(client, "/opds"))
+    feed = parse_feed(_get(client, "/opds"))
 
     hrefs = {
         link.get("href"): link
-        for link in _feed_links(feed)
+        for link in feed_links(feed)
         if link.get("rel") == SUBSECTION_REL
     }
     assert "/opds/x3" in hrefs
@@ -182,12 +139,12 @@ def test_root_feed_links_device_catalogs(client, folder_id) -> None:
 
 @pytest.mark.parametrize("profile", ["x3", "x4"])
 def test_device_root_is_folder_view(client, folder_id, profile) -> None:
-    original = _parse(_get(client, "/opds"))
+    original = parse_feed(_get(client, "/opds"))
 
     resp = _get(client, f"/opds/{profile}")
 
     assert resp.headers["Content-Type"] == NAV
-    feed = _parse(resp)
+    feed = parse_feed(resp)
     assert feed.findtext("a:title", namespaces=NS) == (
         f"BookFlow — {profile.upper()} Catalog"
     )
@@ -204,7 +161,7 @@ def test_device_root_is_folder_view(client, folder_id, profile) -> None:
     for source in (original, feed):
         search = [
             link
-            for link in _feed_links(source)
+            for link in feed_links(source)
             if link.get("rel") == "search"
         ]
         assert len(search) == 1
@@ -223,21 +180,23 @@ def test_device_feed_lists_books_with_profile_links(
     resp = _get(client, f"/opds/{profile}/books")
 
     assert resp.headers["Content-Type"] == ACQ
-    feed = _parse(resp)
+    feed = parse_feed(resp)
     assert feed.findtext("a:title", namespaces=NS) == (
         f"BookFlow — {profile.upper()} — All Books"
     )
-    assert _titles(feed) == ["Dune", "Quarterly Report"]
+    assert feed_titles(feed) == ["Dune", "Quarterly Report"]
 
     entries = {
         entry.findtext("a:title", namespaces=NS): entry
-        for entry in _entries(feed)
+        for entry in feed_entries(feed)
     }
-    epub_link = _entry_links(entries["Dune"])[ACQUISITION_REL][0]
+    epub_link = links_by_rel(entry_links(entries["Dune"]))[ACQUISITION_REL][0]
     assert epub_link.get("href") == f"/opds/{profile}/download/{epub_id}"
     assert epub_link.get("type") == "application/epub+zip"
 
-    pdf_link = _entry_links(entries["Quarterly Report"])[ACQUISITION_REL][0]
+    pdf_link = links_by_rel(entry_links(entries["Quarterly Report"]))[
+        ACQUISITION_REL
+    ][0]
     assert pdf_link.get("href") == f"/opds/download/{pdf_id}"
     assert pdf_link.get("type") == "application/pdf"
 
@@ -261,17 +220,17 @@ def test_device_feed_requires_auth(client, profile) -> None:
 def test_device_feed_paginates(client, folder_id, profile) -> None:
     _insert_books(folder_id, 51)
 
-    first = _parse(_get(client, f"/opds/{profile}/books"))
-    assert len(_entries(first)) == 50
+    first = parse_feed(_get(client, f"/opds/{profile}/books"))
+    assert len(feed_entries(first)) == 50
     next_links = [
         link
-        for link in _feed_links(first)
+        for link in feed_links(first)
         if link.get("rel") == "next"
     ]
     assert next_links[0].get("href") == f"/opds/{profile}/books?page=2"
 
-    second = _parse(_get(client, f"/opds/{profile}/books?page=2"))
-    assert _titles(second) == ["Book 050"]
+    second = parse_feed(_get(client, f"/opds/{profile}/books?page=2"))
+    assert feed_titles(second) == ["Book 050"]
 
 
 @pytest.mark.parametrize("profile", ["x3", "x4"])
@@ -281,17 +240,17 @@ def test_device_recent_uses_profile_downloads(
     _mixed_library(root, folder_id)
     epub_id = _book_id("Dune")
 
-    feed = _parse(_get(client, f"/opds/{profile}/recent"))
+    feed = parse_feed(_get(client, f"/opds/{profile}/recent"))
 
     assert feed.findtext("a:title", namespaces=NS) == (
         f"BookFlow — {profile.upper()} — Recent"
     )
     entries = {
         entry.findtext("a:title", namespaces=NS): entry
-        for entry in _entries(feed)
+        for entry in feed_entries(feed)
     }
     assert set(entries) == {"Dune", "Quarterly Report"}
-    acquisition = _entry_links(entries["Dune"])[ACQUISITION_REL][0]
+    acquisition = links_by_rel(entry_links(entries["Dune"]))[ACQUISITION_REL][0]
     assert acquisition.get("href") == f"/opds/{profile}/download/{epub_id}"
 
 
@@ -302,19 +261,19 @@ def test_device_authors_index_and_feed_use_profile_downloads(
     _mixed_library(root, folder_id)
     epub_id = _book_id("Dune")
 
-    index = _parse(_get(client, f"/opds/{profile}/authors"))
+    index = parse_feed(_get(client, f"/opds/{profile}/authors"))
 
     assert index.findtext("a:title", namespaces=NS) == (
         f"BookFlow — {profile.upper()} — Authors"
     )
-    assert _titles(index) == ["Frank Herbert"]
-    author_link = _entry_links(_entries(index)[0])[SUBSECTION_REL][0]
+    assert feed_titles(index) == ["Frank Herbert"]
+    author_link = links_by_rel(entry_links(feed_entries(index)[0]))[SUBSECTION_REL][0]
     assert author_link.get("href").startswith(f"/opds/{profile}/authors/")
 
-    feed = _parse(_get(client, author_link.get("href")))
+    feed = parse_feed(_get(client, author_link.get("href")))
 
-    assert _titles(feed) == ["Dune"]
-    acquisition = _entry_links(_entries(feed)[0])[ACQUISITION_REL][0]
+    assert feed_titles(feed) == ["Dune"]
+    acquisition = links_by_rel(entry_links(feed_entries(feed)[0]))[ACQUISITION_REL][0]
     assert acquisition.get("href") == f"/opds/{profile}/download/{epub_id}"
 
 
@@ -325,13 +284,13 @@ def test_device_search_uses_profile_downloads(
     _mixed_library(root, folder_id)
     epub_id = _book_id("Dune")
 
-    feed = _parse(_get(client, f"/opds/{profile}/search?q=Dune"))
+    feed = parse_feed(_get(client, f"/opds/{profile}/search?q=Dune"))
 
     assert feed.findtext("a:title", namespaces=NS) == (
         f"BookFlow — {profile.upper()} — Search: Dune"
     )
-    assert _titles(feed) == ["Dune"]
-    acquisition = _entry_links(_entries(feed)[0])[ACQUISITION_REL][0]
+    assert feed_titles(feed) == ["Dune"]
+    acquisition = links_by_rel(entry_links(feed_entries(feed)[0]))[ACQUISITION_REL][0]
     assert acquisition.get("href") == f"/opds/{profile}/download/{epub_id}"
 
 
@@ -345,13 +304,13 @@ def test_device_book_feed_links_to_optimized_download(
     _mixed_library(root, folder_id)
     book_id = _book_id("Dune")
 
-    feed = _parse(_get(client, f"/opds/{profile}/books/{book_id}"))
+    feed = parse_feed(_get(client, f"/opds/{profile}/books/{book_id}"))
 
     assert feed.findtext("a:title", namespaces=NS) == (
         f"BookFlow — {profile.upper()} — Dune"
     )
-    entry = _entries(feed)[0]
-    links = _entry_links(entry)
+    entry = feed_entries(feed)[0]
+    links = links_by_rel(entry_links(entry))
     acquisition = links[ACQUISITION_REL][0]
     assert acquisition.get("href") == f"/opds/{profile}/download/{book_id}"
     assert acquisition.get("type") == "application/epub+zip"
@@ -368,9 +327,9 @@ def test_device_book_feed_falls_back_to_original_for_pdf(
     _mixed_library(root, folder_id)
     book_id = _book_id("Quarterly Report")
 
-    feed = _parse(_get(client, f"/opds/{profile}/books/{book_id}"))
+    feed = parse_feed(_get(client, f"/opds/{profile}/books/{book_id}"))
 
-    acquisition = _entry_links(_entries(feed)[0])[ACQUISITION_REL][0]
+    acquisition = links_by_rel(entry_links(feed_entries(feed)[0]))[ACQUISITION_REL][0]
     assert acquisition.get("href") == f"/opds/download/{book_id}"
     assert acquisition.get("type") == "application/pdf"
 
@@ -391,9 +350,9 @@ def test_epub_acquisition_link_from_device_feed_resolves(
     client, folder_id, root
 ) -> None:
     _mixed_library(root, folder_id)
-    feed = _parse(_get(client, "/opds/x3/books"))
-    epub_entry = _entries(feed)[0]
-    href = _entry_links(epub_entry)[ACQUISITION_REL][0].get("href")
+    feed = parse_feed(_get(client, "/opds/x3/books"))
+    epub_entry = feed_entries(feed)[0]
+    href = links_by_rel(entry_links(epub_entry))[ACQUISITION_REL][0].get("href")
 
     resp = _get(client, href)
 
@@ -405,9 +364,9 @@ def test_pdf_acquisition_link_from_device_feed_resolves(
     client, folder_id, root
 ) -> None:
     _mixed_library(root, folder_id)
-    feed = _parse(_get(client, "/opds/x4/books"))
-    pdf_entry = _entries(feed)[1]
-    href = _entry_links(pdf_entry)[ACQUISITION_REL][0].get("href")
+    feed = parse_feed(_get(client, "/opds/x4/books"))
+    pdf_entry = feed_entries(feed)[1]
+    href = links_by_rel(entry_links(pdf_entry))[ACQUISITION_REL][0].get("href")
 
     resp = _get(client, href)
 

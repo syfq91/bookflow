@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 from alembic import command
-from alembic.config import Config
+from sqlalchemy import func, select
 
 from bookflow.config import Settings
 from bookflow.database.database import init_engine, reset_engine, session_scope
@@ -16,16 +16,9 @@ from bookflow.database.models import Book, LibraryFolder, Progression
 from bookflow.library import scanner
 from bookflow.library.scanner import ScanInProgress, folder_lock, scan_folder
 from bookflow.library.service import add_folder
-from factories import make_epub, make_pdf
+from factories import alembic_config, make_epub, make_pdf
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
 EXTENSIONS = (".epub", ".pdf", ".cbz", ".cbr", ".mobi", ".azw3")
-
-
-def alembic_config(database_url: str) -> Config:
-    cfg = Config(str(REPO_ROOT / "alembic.ini"))
-    cfg.set_main_option("sqlalchemy.url", database_url)
-    return cfg
 
 
 @pytest.fixture
@@ -35,13 +28,6 @@ def db(settings: Settings):
     init_engine(settings)
     yield
     reset_engine()
-
-
-@pytest.fixture
-def root(tmp_path: Path) -> Path:
-    path = tmp_path / "books"
-    path.mkdir()
-    return path
 
 
 @pytest.fixture
@@ -58,12 +44,12 @@ def _scan(folder_id: int):
 
 def _books() -> list[Book]:
     with session_scope() as session:
-        return list(session.query(Book).order_by(Book.relative_path))
+        return list(session.scalars(select(Book).order_by(Book.relative_path)))
 
 
 def _folder() -> LibraryFolder:
     with session_scope() as session:
-        return session.query(LibraryFolder).one()
+        return session.scalars(select(LibraryFolder)).one()
 
 
 # --- acceptance ------------------------------------------------------------
@@ -185,7 +171,7 @@ def test_rescan_removes_deleted_files(folder_id: int, root: Path) -> None:
     make_epub(path, title="Gone")
     _scan(folder_id)
     with session_scope() as session:
-        book = session.query(Book).one()
+        book = session.scalars(select(Book)).one()
         session.add(Progression(book_id=book.id, progression=0.42))
 
     path.unlink()
@@ -193,8 +179,8 @@ def test_rescan_removes_deleted_files(folder_id: int, root: Path) -> None:
 
     assert (result.added, result.updated, result.removed) == (0, 0, 1)
     with session_scope() as session:
-        assert session.query(Book).count() == 0
-        assert session.query(Progression).count() == 0
+        assert session.scalar(select(func.count(Book.id))) == 0
+        assert session.scalar(select(func.count(Progression.id))) == 0
 
 
 def test_unavailable_folder_preserves_index(folder_id: int, root: Path) -> None:

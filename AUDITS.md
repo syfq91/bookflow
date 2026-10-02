@@ -208,39 +208,35 @@ reached via dynamic `url_for`), all templates and `static/style.css`
 
 ## 4. Tests
 
-- [ ] **Scaffolding duplicated across ~400 lines**
-      `def alembic_config` copied **11×**, the shadowed `app` fixture
-      **9×** (in test files), `client`/`root` ~10×, `_login()` 5×
-            (`test_admin_books.py:58`,
- `test_auth.py:60`, `test_health.py:85`,
-      `test_library.py:75`, `test_optimizer.py:125`), plus five
-      differently-shaped seed helpers (`test_opds.py:129 _insert`,
-      `test_opds_folders.py:118 _insert`,
-      `test_device_catalogs.py:125 _insert_books`,
-      `test_optimizer.py:99 _insert_book`, `test_progression.py:101
-      _book_id`). Drift is already visible: `test_opds.py:109
-      _entry_links()` returns a list, while
-      `test_device_catalogs.py:103` and `test_opds_folders.py:94`
-      return dicts. Move `alembic_config`, a migrated `app` fixture,
-      `login_admin`, feed parsing and seeding into `tests/conftest.py` /
-      `tests/factories.py`, and update the AGENTS.md fixture bullet in the
-      same commit.
-- [ ] **23 legacy `session.query()` calls** — AGENTS.md requires
-      `select()`. Sites: `test_scanner.py:61,66,188,196,197`,
-      `test_admin_books.py:284,305`,
-      `test_library.py:100,175,176,353,390,402,426,454,465,466,617`,
-      `test_optimizer.py:96`, `test_opds.py:126`,
-      `test_database.py:60,77,97`. Mechanical swap to
-      `session.scalars(select(...))` / `select(func.count(...))`.
+- [x] **Scaffolding duplicated across ~400 lines** — resolved:
+      `tests/conftest.py` owns the `build_app` factory (runs `alembic
+      upgrade head`, `migrate=False` for empty-DB tests, resets the engine
+      around each test) plus the shared `app`, `client` and `root`
+      fixtures; `tests/factories.py` owns `alembic_config`,
+      `login_admin`, `insert_books` and the feed helpers (`parse_feed`,
+      `feed_entries`, `feed_titles`, `feed_links`, `entry_links`,
+      `links_by_rel`). Per-suite `_login`, `_parse`, `_entries`,
+      `_titles`, `_feed_links`, `_entry_links`, `_links_by_rel`,
+      `_insert`/`_insert_book`, and the shadowed `app`/`client`/`root`/
+      `alembic_config` copies are gone; what stays suite-local is genuinely
+      local (`_headers`/`_get`/`_scan`, `test_progression.py`'s datetime
+      `_parse`, count/title-based seed wrappers). The drift cited here
+      (`_entry_links` returning a list in one suite and a dict in two) is
+      resolved: `entry_links` lists links, `links_by_rel` groups them.
+      AGENTS.md fixture bullet updated in the same commit.
+- [x] **23 legacy `session.query()` calls** — resolved: every site is
+      `session.scalars(select(...))` (plus the count queries already on
+      `select(func.count(...))`); `session.query` no longer appears in any
+      `.py` file outside the vendored optimizer.
 - [ ] **`test_unreadable_subdirectory_reports_partial` fails as root**
-      `tests/test_scanner.py:215-231` relies on `chmod 0o000`; root (typical
+      `tests/test_scanner.py:201-217` relies on `chmod 0o000`; root (typical
       CI/Docker) can still read the dir, so the assertion flips. Guard
       with `pytest.mark.skipif(os.geteuid() == 0, ...)`.
-- [ ] **Fragile negative assertion** `tests/test_health.py:181`
+- [ ] **Fragile negative assertion** `tests/test_health.py:134`
       `assert b"never" not in resp.data` passes as long as the literal
       never appears anywhere on the page; assert on the rendered
       `last_success` instead.
-- [ ] **Temp dir leaked per session** `tests/conftest.py:11`
+- [ ] **Temp dir leaked per session** `tests/conftest.py:14`
       `tempfile.mkdtemp(prefix="bookflow-test-")` is created at import
       time and never removed.
 
@@ -262,8 +258,10 @@ reached via dynamic `url_for`), all templates and `static/style.css`
 
 ## 6. Minor / cosmetic
 
-- [ ] Four unused `noqa` directives (`RUF100`): `health/service.py:206`,
-      `tests/conftest.py:13,14,15`.
+- [x] **Unused `noqa` directives (`RUF100`)** — resolved: the four dead
+      `# noqa: E402` in `tests/conftest.py` were removed (ruff does not
+      flag the `os.environ.setdefault(...)`-before-import pattern), and
+      `health/service.py:206`'s `# noqa: F401` is in use, so it stays.
 - [ ] Non-default ruff rules flag 55 findings across `ARG, SIM, C4, RUF059`
       (49 `ARG` + 4 `SIM` + 1 `C4` + 1 `RUF059`, mostly test fixture
       params — verify before acting).
@@ -302,8 +300,13 @@ reached via dynamic `url_for`), all templates and `static/style.css`
    (2026-10-02)** — `_scan()` split into snapshot → filesystem work →
    one write session; `library_tree` predicates pushed into SQL plus
    `?page=` pagination; 2 new tests.
-3. **§4 test scaffolding + `session.query` migration** — biggest raw
-   line-count win; update AGENTS.md in the same commit.
+3. ~~§4 test scaffolding + `session.query` migration~~ **done
+   (2026-10-02)** — conftest gained the `build_app` factory plus shared
+   `app`/`client`/`root`; factories gained `alembic_config`,
+   `login_admin`, `insert_books` and the feed helpers; per-suite
+   `_login`/`_parse`/`_insert*` and the shadowed fixtures were removed;
+   all 23 `session.query()` sites moved to `select()`; AGENTS.md fixture
+   bullet updated in the same commit.
 4. **§2 mechanical dedup** (paths, CSRF, basic auth, download, scan
    flash, stats fallback, `get_folder`) — safe as small separate commits.
 5. **§3 cache hygiene + security items** (`change-me` password, proxy-

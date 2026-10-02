@@ -9,32 +9,22 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from alembic import command
-from alembic.config import Config
 from sqlalchemy import select
 
-from bookflow.app import create_app
 from bookflow.config import Settings
-from bookflow.database.database import reset_engine, session_scope
+from bookflow.database.database import session_scope
 from bookflow.database.models import Book, OptimizedBook
 from bookflow.library.scanner import scan_folder
 from bookflow.library.service import add_folder
 from bookflow.optimizer import service as optimizer_service
 from bookflow.optimizer.locks import profile_lock
 from bookflow.optimizer.service import optimize_book
-from factories import csrf_token, make_epub, make_pdf
+from factories import csrf_token, insert_books, login_admin, make_epub, make_pdf
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
 PASSWORD = "opds-pass"
 EXTENSIONS = (".epub", ".pdf")
 EPUB_TYPE = "application/epub+zip"
 XML_TYPE = "application/xml"
-
-
-def alembic_config(database_url: str) -> Config:
-    cfg = Config(str(REPO_ROOT / "alembic.ini"))
-    cfg.set_main_option("sqlalchemy.url", database_url)
-    return cfg
 
 
 # --- fixtures ---------------------------------------------------------------
@@ -46,25 +36,8 @@ def opds_settings(settings: Settings) -> Settings:
 
 
 @pytest.fixture
-def app(opds_settings: Settings):
-    reset_engine()
-    application = create_app(opds_settings)
-    application.config["TESTING"] = True
-    command.upgrade(alembic_config(opds_settings.database_url), "head")
-    yield application
-    reset_engine()
-
-
-@pytest.fixture
-def client(app):
-    return app.test_client()
-
-
-@pytest.fixture
-def root(tmp_path: Path) -> Path:
-    path = tmp_path / "books"
-    path.mkdir()
-    return path
+def app(build_app, opds_settings: Settings):
+    return build_app(opds_settings)
 
 
 @pytest.fixture
@@ -93,15 +66,11 @@ def _scan(folder_id: int):
 
 def _book_ids() -> list[int]:
     with session_scope() as session:
-        return [book.id for book in session.query(Book).order_by(Book.id)]
+        return [book.id for book in session.scalars(select(Book).order_by(Book.id))]
 
 
 def _insert_book(folder_id: int, relative_path: str) -> int:
-    with session_scope() as session:
-        book = Book(folder_id=folder_id, relative_path=relative_path)
-        session.add(book)
-        session.flush()
-        return book.id
+    return insert_books(folder_id, [{"path": relative_path}])[0]
 
 
 def _optimized_rows(book_id: int) -> list[OptimizedBook]:
@@ -120,18 +89,6 @@ def _library_book(root: Path, folder_id: int, title: str = "Dune") -> tuple[int,
     make_epub(source, title=title, authors=("Frank Herbert",))
     _scan(folder_id)
     return _book_ids()[0], source
-
-
-def _login(client) -> None:
-    resp = client.post(
-        "/admin/login",
-        data={
-            "csrf_token": csrf_token(client),
-            "username": "admin",
-            "password": PASSWORD,
-        },
-    )
-    assert resp.status_code == 302
 
 
 def _clear_cache(client):
@@ -409,7 +366,7 @@ def test_cache_clear_requires_login(client, folder_id, root) -> None:
 
 
 def test_cache_clear_requires_csrf(client, folder_id, root) -> None:
-    _login(client)
+    login_admin(client, password=PASSWORD)
 
     resp = client.post("/admin/cache/clear")
 
@@ -425,7 +382,7 @@ def test_cache_clear_removes_files_and_rows(
     settings = app.config["SETTINGS"]
     assert (settings.x3_cache_dir / f"{book_id}.epub").is_file()
 
-    _login(client)
+    login_admin(client, password=PASSWORD)
     resp = _clear_cache(client)
 
     assert resp.status_code == 302
@@ -452,7 +409,7 @@ def test_download_regenerates_after_cache_clear(
     first = _get(client, f"/opds/x3/download/{book_id}")
     assert first.status_code == 200
 
-    _login(client)
+    login_admin(client, password=PASSWORD)
     assert _clear_cache(client).status_code == 302
     assert _optimized_rows(book_id) == []
 

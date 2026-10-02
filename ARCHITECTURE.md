@@ -144,7 +144,9 @@ epubkit integration is a package `optimizer/epubkit/` rather than a single
 9. `GET /healthz` → `{"status": "ok"}` (public liveness probe).
 
 A module-level `app = create_app()` exists for `gunicorn bookflow.app:app`.
-Tests call `create_app(test_settings)` directly after `reset_engine()`.
+Tests build apps through the `build_app` fixture factory
+(`tests/conftest.py`), which calls `reset_engine()` first and again on
+teardown.
 
 ## 5. Configuration
 
@@ -474,19 +476,23 @@ threads (`check_same_thread=False` + WAL-free default journal).
 
 `tests/` (275 tests, `uv run pytest`):
 
-- `conftest.py` — temp `Settings` (fresh data dir + SQLite per test) and a
-  bare app fixture; every suite that needs migrations shadows these with an
-  `app` fixture that runs `alembic upgrade head`, then `reset_engine()`
-  on teardown.
+- `conftest.py` — temp `Settings` (fresh data dir + SQLite per test), the
+  `build_app` factory (runs `alembic upgrade head` unless `migrate=False`,
+  and resets the engine around the test) and the shared `app`/`client`/
+  `root` fixtures; a suite that needs another password, `browse_root` or
+  an unmigrated app layers its own `*_settings`/`app` on top.
 - `factories.py` — `make_epub()` (valid container/OPF, optional cover),
-  `make_pdf()`, `csrf_token(client)`.
+  `make_pdf()`, `csrf_token(client)`, `login_admin(client, password=...)`,
+  `insert_books()` (ORM rows, no files), `alembic_config()`, and the feed
+  helpers (`parse_feed`, `feed_entries`, `feed_titles`, `feed_links`,
+  `entry_links`, `links_by_rel`).
 - Suite ↔ subsystem: `test_auth`, `test_library`, `test_scanner`,
   `test_opds`, `test_progression`, `test_optimizer`, `test_health`,
   `test_device_catalogs`, plus `test_app`/`test_config`/`test_database`.
-- Recurring patterns: ElementTree helpers to parse feeds and group links by
-  `rel`; session helpers (`_login`, Basic `_headers`, `_get`/`_put`);
-  direct ORM seeding for rows that don't need real files; monkeypatched
-  counting wrappers to prove cache hits skip epubkit.
+- Recurring patterns: the shared feed helpers for parsing feeds and
+  grouping links by `rel`; suite-local session helpers (Basic `_headers`,
+  `_get`/`_put`, `_scan`); `insert_books()` for rows that don't need real
+  files; monkeypatched counting wrappers to prove cache hits skip epubkit.
 
 ## 12. Development & deployment
 

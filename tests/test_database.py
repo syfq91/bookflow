@@ -1,25 +1,16 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 from alembic import command
-from alembic.config import Config
-from sqlalchemy import inspect
+from sqlalchemy import inspect, select
 from sqlalchemy.exc import IntegrityError
 
 from bookflow.config import Settings
 from bookflow.database.database import init_engine, reset_engine, session_scope
 from bookflow.database.models import Book, LibraryFolder, OptimizedBook
+from factories import alembic_config
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
 EXPECTED_TABLES = {"library_folders", "books", "progressions", "optimized_books"}
-
-
-def alembic_config(database_url: str) -> Config:
-    cfg = Config(str(REPO_ROOT / "alembic.ini"))
-    cfg.set_main_option("sqlalchemy.url", database_url)
-    return cfg
 
 
 @pytest.fixture(autouse=True)
@@ -57,7 +48,7 @@ def test_session_roundtrip(settings: Settings) -> None:
         session.add(Book(folder_id=folder.id, relative_path="dune.epub", title="Dune"))
 
     with session_scope() as session:
-        folder = session.query(LibraryFolder).one()
+        folder = session.scalars(select(LibraryFolder)).one()
         assert folder.path == "/media/books"
         assert folder.books[0].relative_path == "dune.epub"
 
@@ -74,7 +65,7 @@ def test_book_relative_path_unique(settings: Settings) -> None:
 
     with pytest.raises(IntegrityError):
         with session_scope() as session:
-            folder_id = session.query(LibraryFolder).one().id
+            folder_id = session.scalars(select(LibraryFolder)).one().id
             session.add(Book(folder_id=folder_id, relative_path="dune.epub"))
 
 
@@ -94,5 +85,5 @@ def test_optimized_book_profile_unique(settings: Settings) -> None:
 
     with pytest.raises(IntegrityError):
         with session_scope() as session:
-            book_id = session.query(Book).one().id
+            book_id = session.scalars(select(Book)).one().id
             session.add(OptimizedBook(book_id=book_id, profile="x4"))

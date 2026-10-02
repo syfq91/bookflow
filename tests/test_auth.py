@@ -1,26 +1,14 @@
 from __future__ import annotations
 
-import secrets
 from dataclasses import replace
-from pathlib import Path
 
 import pytest
-from alembic import command
-from alembic.config import Config
 
-from bookflow.app import create_app
 from bookflow.auth.service import LoginRateLimiter, safe_next_target
 from bookflow.config import Settings
-from bookflow.database.database import reset_engine
+from factories import csrf_token, login_admin
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
 ADMIN_PASSWORD = "correct-horse-battery-staple"
-
-
-def alembic_config(database_url: str) -> Config:
-    cfg = Config(str(REPO_ROOT / "alembic.ini"))
-    cfg.set_main_option("sqlalchemy.url", database_url)
-    return cfg
 
 
 @pytest.fixture
@@ -29,49 +17,13 @@ def auth_settings(settings: Settings) -> Settings:
 
 
 @pytest.fixture
-def app(auth_settings: Settings):
-    reset_engine()
-    application = create_app(auth_settings)
-    application.config["TESTING"] = True
-    yield application
-    reset_engine()
+def app(build_app, auth_settings: Settings):
+    return build_app(auth_settings, migrate=False)
 
 
 @pytest.fixture
-def client(app):
-    return app.test_client()
-
-
-@pytest.fixture
-def migrated_client(app, auth_settings):
-    command.upgrade(alembic_config(auth_settings.database_url), "head")
-    return app.test_client()
-
-
-def _csrf(client) -> str:
-    with client.session_transaction() as sess:
-        token = sess.get("csrf_token")
-        if not token:
-            token = secrets.token_urlsafe(32)
-            sess["csrf_token"] = token
-        return token
-
-
-def _login(
-    client,
-    username: str = "admin",
-    password: str = ADMIN_PASSWORD,
-    next_target: str = "",
-):
-    return client.post(
-        "/admin/login",
-        data={
-            "csrf_token": _csrf(client),
-            "username": username,
-            "password": password,
-            "next": next_target,
-        },
-    )
+def migrated_client(build_app, auth_settings: Settings):
+    return build_app(auth_settings).test_client()
 
 
 # --- login -----------------------------------------------------------------
@@ -85,7 +37,7 @@ def test_login_page_renders(client) -> None:
 
 
 def test_valid_login_redirects_to_dashboard(migrated_client) -> None:
-    resp = _login(migrated_client)
+    resp = login_admin(migrated_client, password=ADMIN_PASSWORD)
 
     assert resp.status_code == 302
     assert resp.headers["Location"].endswith("/admin/")
@@ -93,7 +45,7 @@ def test_valid_login_redirects_to_dashboard(migrated_client) -> None:
 
 
 def test_invalid_username_rejected(client) -> None:
-    resp = _login(client, username="root")
+    resp = login_admin(client, username="root", password=ADMIN_PASSWORD)
 
     assert resp.status_code == 200
     assert b"Invalid username or password." in resp.data
@@ -101,7 +53,7 @@ def test_invalid_username_rejected(client) -> None:
 
 
 def test_invalid_password_rejected(client) -> None:
-    resp = _login(client, password="wrong")
+    resp = login_admin(client, password="wrong")
 
     assert resp.status_code == 200
     assert b"Invalid username or password." in resp.data
@@ -109,7 +61,7 @@ def test_invalid_password_rejected(client) -> None:
 
 
 def test_login_page_redirects_when_authenticated(client) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
 
     resp = client.get("/admin/login")
 
@@ -117,24 +69,18 @@ def test_login_page_redirects_when_authenticated(client) -> None:
     assert resp.headers["Location"].endswith("/admin/")
 
 
-def test_unconfigured_password_returns_503(settings: Settings) -> None:
-    reset_engine()
-    application = create_app(settings)
-    application.config["TESTING"] = True
-    try:
-        fresh = application.test_client()
-        resp = fresh.post(
-            "/admin/login",
-            data={
-                "csrf_token": _csrf(fresh),
-                "username": "admin",
-                "password": "anything",
-            },
-        )
-        assert resp.status_code == 503
-        assert fresh.get("/admin/").status_code == 302
-    finally:
-        reset_engine()
+def test_unconfigured_password_returns_503(settings: Settings, build_app) -> None:
+    fresh = build_app(settings, migrate=False).test_client()
+    resp = fresh.post(
+        "/admin/login",
+        data={
+            "csrf_token": csrf_token(fresh),
+            "username": "admin",
+            "password": "anything",
+        },
+    )
+    assert resp.status_code == 503
+    assert fresh.get("/admin/").status_code == 302
 
 
 # --- protected routes ------------------------------------------------------
@@ -149,14 +95,14 @@ def test_protected_routes_redirect_anonymous_users(migrated_client) -> None:
 
 
 def test_authenticated_user_can_open_admin_pages(migrated_client) -> None:
-    _login(migrated_client)
+    login_admin(migrated_client, password=ADMIN_PASSWORD)
 
     for path in ("/admin/", "/admin/folders", "/admin/health"):
         assert migrated_client.get(path).status_code == 200
 
 
 def test_dashboard_renders_stats(migrated_client) -> None:
-    _login(migrated_client)
+    login_admin(migrated_client, password=ADMIN_PASSWORD)
 
     resp = migrated_client.get("/admin/")
 
@@ -170,7 +116,7 @@ def test_healthz_stays_public(client) -> None:
 
 
 def test_dashboard_explains_missing_migrations(client) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
 
     resp = client.get("/admin/")
 
@@ -182,16 +128,16 @@ def test_dashboard_explains_missing_migrations(client) -> None:
 
 
 def test_logout_clears_session(client) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
 
-    resp = client.post("/admin/logout", data={"csrf_token": _csrf(client)})
+    resp = client.post("/admin/logout", data={"csrf_token": csrf_token(client)})
 
     assert resp.status_code == 302
     assert client.get("/admin/").status_code == 302
 
 
 def test_logout_requires_csrf(migrated_client) -> None:
-    _login(migrated_client)
+    login_admin(migrated_client, password=ADMIN_PASSWORD)
 
     resp = migrated_client.post("/admin/logout", data={})
 
@@ -201,7 +147,7 @@ def test_logout_requires_csrf(migrated_client) -> None:
 
 def test_session_cookie_required(app) -> None:
     client = app.test_client()
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
 
     fresh = app.test_client()
 
@@ -209,7 +155,7 @@ def test_session_cookie_required(app) -> None:
 
 
 def test_session_cookie_flags(client) -> None:
-    resp = _login(client)
+    resp = login_admin(client, password=ADMIN_PASSWORD)
 
     set_cookie = resp.headers.get("Set-Cookie", "")
     assert "HttpOnly" in set_cookie
@@ -229,7 +175,7 @@ def test_login_post_requires_csrf(client) -> None:
 
 
 def test_login_post_rejects_wrong_csrf(client) -> None:
-    _csrf(client)
+    csrf_token(client)
 
     resp = client.post(
         "/admin/login",
@@ -244,14 +190,14 @@ def test_login_post_rejects_wrong_csrf(client) -> None:
 
 
 def test_login_post_accepts_valid_csrf(client) -> None:
-    assert _login(client).status_code == 302
+    assert login_admin(client, password=ADMIN_PASSWORD).status_code == 302
 
 
 # --- redirect safety -------------------------------------------------------
 
 
 def test_login_honours_internal_next_target(client) -> None:
-    resp = _login(client, next_target="/admin/health")
+    resp = login_admin(client, password=ADMIN_PASSWORD, next_target="/admin/health")
 
     assert resp.headers["Location"].endswith("/admin/health")
 
@@ -261,7 +207,7 @@ def test_login_honours_internal_next_target(client) -> None:
     ["https://evil.example/steal", "//evil.example/steal", "/\\evil.example"],
 )
 def test_login_rejects_unsafe_next_target(client, target: str) -> None:
-    resp = _login(client, next_target=target)
+    resp = login_admin(client, password=ADMIN_PASSWORD, next_target=target)
 
     assert resp.headers["Location"].endswith("/admin/")
 
@@ -279,9 +225,9 @@ def test_safe_next_target() -> None:
 
 def test_rate_limit_blocks_after_max_failures(client, app) -> None:
     for _ in range(5):
-        assert _login(client, password="wrong").status_code == 200
+        assert login_admin(client, password="wrong").status_code == 200
 
-    resp = _login(client)
+    resp = login_admin(client, password=ADMIN_PASSWORD)
 
     assert resp.status_code == 429
     limiter = app.extensions["login_rate_limiter"]
@@ -290,9 +236,9 @@ def test_rate_limit_blocks_after_max_failures(client, app) -> None:
 
 def test_successful_login_resets_rate_limit(client, app) -> None:
     for _ in range(3):
-        _login(client, password="wrong")
+        login_admin(client, password="wrong")
 
-    assert _login(client).status_code == 302
+    assert login_admin(client, password=ADMIN_PASSWORD).status_code == 302
 
     limiter = app.extensions["login_rate_limiter"]
     assert not limiter.is_blocked(("127.0.0.1", "admin"))

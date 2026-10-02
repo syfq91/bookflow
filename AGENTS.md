@@ -77,11 +77,15 @@ pkill -f "[f]lask --app bookflow.app run"
   via the global `csrf_token()`; existing badge/detail/grid CSS classes in
   `static/style.css` (add `badge-warn`-style variants there if needed).
 - **Tests:** mirror existing files. Fixture chain is
-  `settings` (conftest, temp dir + DB) → shadowed `app` fixture that runs
-  `alembic upgrade head` after `create_app(...)` → `client`; always
-  `reset_engine()` on teardown. Reuse `tests/factories.py`
-  (`make_epub`, `make_pdf`, `csrf_token`) instead of hand-rolling files.
-  Seed rows directly via ORM when no real file is needed.
+  `settings` (conftest, temp dir + DB) → `build_app(settings)` (conftest
+  factory: runs `alembic upgrade head` unless `migrate=False`, resets the
+  engine around each test) → per-suite `app` → `client`. A suite that
+  needs another password, `browse_root`, or an unmigrated app defines its
+  own `*_settings` / `app` fixture on top of `build_app`. Reuse
+  `tests/factories.py` (`make_epub`, `make_pdf`, `csrf_token`,
+  `login_admin`, `insert_books`, `alembic_config`, feed-parsing helpers)
+  instead of hand-rolling files; seed rows with `insert_books(...)` when
+  no real file is needed.
 
 ## Invariants — never break these
 

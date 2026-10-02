@@ -4,28 +4,18 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from alembic import command
-from alembic.config import Config
 from sqlalchemy import select
 
 from bookflow.admin.routes import PAGE_SIZE
-from bookflow.app import create_app
 from bookflow.config import Settings
-from bookflow.database.database import reset_engine, session_scope
+from bookflow.database.database import session_scope
 from bookflow.database.models import Book
 from bookflow.library.scanner import scan_folder
 from bookflow.library.service import add_folder
-from factories import csrf_token, make_epub, make_pdf
+from factories import insert_books, login_admin, make_epub, make_pdf
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
 ADMIN_PASSWORD = "library-pass"
 EXTENSIONS = (".epub", ".pdf", ".cbz", ".cbr", ".mobi", ".azw3")
-
-
-def alembic_config(database_url: str) -> Config:
-    cfg = Config(str(REPO_ROOT / "alembic.ini"))
-    cfg.set_main_option("sqlalchemy.url", database_url)
-    return cfg
 
 
 @pytest.fixture
@@ -34,37 +24,8 @@ def auth_settings(settings: Settings) -> Settings:
 
 
 @pytest.fixture
-def app(auth_settings: Settings):
-    reset_engine()
-    application = create_app(auth_settings)
-    application.config["TESTING"] = True
-    command.upgrade(alembic_config(auth_settings.database_url), "head")
-    yield application
-    reset_engine()
-
-
-@pytest.fixture
-def client(app):
-    return app.test_client()
-
-
-@pytest.fixture
-def root(tmp_path: Path) -> Path:
-    path = tmp_path / "books"
-    path.mkdir()
-    return path
-
-
-def _login(client) -> None:
-    resp = client.post(
-        "/admin/login",
-        data={
-            "csrf_token": csrf_token(client),
-            "username": "admin",
-            "password": ADMIN_PASSWORD,
-        },
-    )
-    assert resp.status_code == 302
+def app(build_app, auth_settings: Settings):
+    return build_app(auth_settings)
 
 
 def _seed_tree(root: Path) -> int:
@@ -99,7 +60,7 @@ def test_library_routes_require_login(client) -> None:
 
 
 def test_library_index_redirects_to_folders(client) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
 
     resp = client.get("/admin/library")
 
@@ -108,7 +69,7 @@ def test_library_index_redirects_to_folders(client) -> None:
 
 
 def test_folders_lists_registered_folders_without_books(client, root: Path) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
     folder_id = _seed_tree(root)
 
     resp = client.get("/admin/folders")
@@ -120,7 +81,7 @@ def test_folders_lists_registered_folders_without_books(client, root: Path) -> N
 
 
 def test_dashboard_links_to_library(client) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
 
     resp = client.get("/admin/")
 
@@ -128,7 +89,7 @@ def test_dashboard_links_to_library(client) -> None:
 
 
 def test_tree_lists_subfolders_and_files(client, root: Path) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
     folder_id = _seed_tree(root)
 
     resp = client.get(f"/admin/library/{folder_id}")
@@ -146,7 +107,7 @@ def test_tree_lists_subfolders_and_files(client, root: Path) -> None:
 
 
 def test_tree_drills_into_subfolder(client, root: Path) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
     folder_id = _seed_tree(root)
 
     resp = client.get(f"/admin/library/{folder_id}?path=sub")
@@ -160,7 +121,7 @@ def test_tree_drills_into_subfolder(client, root: Path) -> None:
 
 
 def test_tree_two_levels_deep(client, root: Path) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
     folder_id = _seed_tree(root)
 
     resp = client.get(f"/admin/library/{folder_id}?path=sub/deep")
@@ -171,7 +132,7 @@ def test_tree_two_levels_deep(client, root: Path) -> None:
 
 
 def test_tree_unknown_folder_returns_404(client) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
 
     assert client.get("/admin/library/4242").status_code == 404
 
@@ -181,7 +142,7 @@ def test_tree_unknown_folder_returns_404(client) -> None:
     ["../x", "/etc", "a//b", "a/./b", "..", "a\\b"],
 )
 def test_tree_rejects_bad_paths(client, root: Path, bad: str) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
     folder_id = _seed_tree(root)
 
     resp = client.get(f"/admin/library/{folder_id}?path={bad}")
@@ -190,7 +151,7 @@ def test_tree_rejects_bad_paths(client, root: Path, bad: str) -> None:
 
 
 def test_tree_flat_folder_shows_files_only(client, root: Path) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
     make_epub(root / "solo.epub", title="Solo")
     folder_id = add_folder(str(root)).folder_id
     assert folder_id is not None
@@ -204,19 +165,20 @@ def test_tree_flat_folder_shows_files_only(client, root: Path) -> None:
 
 
 def test_tree_paginates_files(client, root: Path) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
     folder_id = add_folder(str(root)).folder_id
     assert folder_id is not None
-    with session_scope() as session:
-        for index in range(PAGE_SIZE + 3):
-            session.add(
-                Book(
-                    folder_id=folder_id,
-                    relative_path=f"book{index:03d}.epub",
-                    file_format="EPUB",
-                    file_size=10,
-                )
-            )
+    insert_books(
+        folder_id,
+        [
+            {
+                "path": f"book{index:03d}.epub",
+                "file_format": "EPUB",
+                "file_size": 10,
+            }
+            for index in range(PAGE_SIZE + 3)
+        ],
+    )
 
     resp = client.get(f"/admin/library/{folder_id}")
 
@@ -242,7 +204,7 @@ def test_tree_paginates_files(client, root: Path) -> None:
 
 
 def test_download_returns_file_bytes(client, root: Path) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
     _seed_tree(root)
     book_id = _book_id("top.epub")
 
@@ -255,7 +217,7 @@ def test_download_returns_file_bytes(client, root: Path) -> None:
 
 
 def test_download_pdf_mime_type(client, root: Path) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
     _seed_tree(root)
     book_id = _book_id("manual.pdf")
 
@@ -266,7 +228,7 @@ def test_download_pdf_mime_type(client, root: Path) -> None:
 
 
 def test_download_rejects_path_traversal(client, root: Path) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
     outside = root.parent / "outside.epub"
     make_epub(outside, title="Outside")
     folder_id = add_folder(str(root)).folder_id
@@ -281,7 +243,7 @@ def test_download_rejects_path_traversal(client, root: Path) -> None:
             )
         )
         session.flush()
-        book_id = session.query(Book).one().id
+        book_id = session.scalars(select(Book)).one().id
 
     resp = client.get(f"/admin/books/{book_id}/download")
 
@@ -289,7 +251,7 @@ def test_download_rejects_path_traversal(client, root: Path) -> None:
 
 
 def test_download_missing_file_returns_404(client, root: Path) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
     folder_id = add_folder(str(root)).folder_id
     assert folder_id is not None
     with session_scope() as session:
@@ -302,7 +264,7 @@ def test_download_missing_file_returns_404(client, root: Path) -> None:
             )
         )
         session.flush()
-        book_id = session.query(Book).one().id
+        book_id = session.scalars(select(Book)).one().id
 
     resp = client.get(f"/admin/books/{book_id}/download")
 
@@ -310,6 +272,6 @@ def test_download_missing_file_returns_404(client, root: Path) -> None:
 
 
 def test_download_unknown_book_returns_404(client) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
 
     assert client.get("/admin/books/4242/download").status_code == 404

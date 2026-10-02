@@ -8,16 +8,11 @@ from pathlib import Path
 from xml.etree import ElementTree
 
 import pytest
-from alembic import command
-from alembic.config import Config
 
-from bookflow.app import create_app
 from bookflow.config import Settings
-from bookflow.database.database import reset_engine, session_scope
-from bookflow.database.models import Book
 from bookflow.library.service import add_folder
+from factories import insert_books
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
 PASSWORD = "opds-pass"
 
 PROGRESSION_TYPE = "application/opds-progression+json"
@@ -33,12 +28,6 @@ NS = {"a": ATOM}
 DEVICE = {"id": "urn:uuid:019c0047-cc8d-7ec4-a3c3-938ccadc020a", "name": "Reader"}
 
 
-def alembic_config(database_url: str) -> Config:
-    cfg = Config(str(REPO_ROOT / "alembic.ini"))
-    cfg.set_main_option("sqlalchemy.url", database_url)
-    return cfg
-
-
 # --- fixtures ---------------------------------------------------------------
 
 
@@ -48,25 +37,8 @@ def opds_settings(settings: Settings) -> Settings:
 
 
 @pytest.fixture
-def app(opds_settings: Settings):
-    reset_engine()
-    application = create_app(opds_settings)
-    application.config["TESTING"] = True
-    command.upgrade(alembic_config(opds_settings.database_url), "head")
-    yield application
-    reset_engine()
-
-
-@pytest.fixture
-def client(app):
-    return app.test_client()
-
-
-@pytest.fixture
-def root(tmp_path: Path) -> Path:
-    path = tmp_path / "books"
-    path.mkdir()
-    return path
+def app(build_app, opds_settings: Settings):
+    return build_app(opds_settings)
 
 
 @pytest.fixture
@@ -99,15 +71,9 @@ def _put(client, book_id: int, document, content_type: str = PROGRESSION_TYPE):
 
 
 def _book_id(folder_id: int, title: str = "Dune") -> int:
-    with session_scope() as session:
-        book = Book(
-            folder_id=folder_id,
-            relative_path=f"{title.lower()}.epub",
-            title=title,
-        )
-        session.add(book)
-        session.flush()
-        return book.id
+    return insert_books(folder_id, [{"path": f"{title.lower()}.epub", "title": title}])[
+        0
+    ]
 
 
 def _document(**overrides) -> dict:

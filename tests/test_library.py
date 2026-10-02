@@ -8,9 +8,8 @@ from pathlib import Path
 
 import pytest
 from alembic import command
-from alembic.config import Config
+from sqlalchemy import func, select
 
-from bookflow.app import create_app
 from bookflow.config import Settings
 from bookflow.database.database import init_engine, reset_engine, session_scope
 from bookflow.database.models import Book, LibraryFolder
@@ -18,17 +17,10 @@ from bookflow.library import browse as browse_module
 from bookflow.library.browse import browse_directory
 from bookflow.library.scanner import folder_lock, scan_folder
 from bookflow.library.service import add_folder, list_folders, remove_folder
-from factories import csrf_token, make_epub
+from factories import alembic_config, csrf_token, login_admin, make_epub
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
 ADMIN_PASSWORD = "library-pass"
 EXTENSIONS = (".epub", ".pdf", ".cbz", ".cbr", ".mobi", ".azw3")
-
-
-def alembic_config(database_url: str) -> Config:
-    cfg = Config(str(REPO_ROOT / "alembic.ini"))
-    cfg.set_main_option("sqlalchemy.url", database_url)
-    return cfg
 
 
 @pytest.fixture
@@ -38,13 +30,6 @@ def db(settings: Settings):
     init_engine(settings)
     yield
     reset_engine()
-
-
-@pytest.fixture
-def root(tmp_path: Path) -> Path:
-    path = tmp_path / "books"
-    path.mkdir()
-    return path
 
 
 @pytest.fixture
@@ -58,30 +43,8 @@ def auth_settings(settings: Settings, tmp_path: Path) -> Settings:
 
 
 @pytest.fixture
-def app(auth_settings: Settings):
-    reset_engine()
-    application = create_app(auth_settings)
-    application.config["TESTING"] = True
-    command.upgrade(alembic_config(auth_settings.database_url), "head")
-    yield application
-    reset_engine()
-
-
-@pytest.fixture
-def client(app):
-    return app.test_client()
-
-
-def _login(client) -> None:
-    resp = client.post(
-        "/admin/login",
-        data={
-            "csrf_token": csrf_token(client),
-            "username": "admin",
-            "password": ADMIN_PASSWORD,
-        },
-    )
-    assert resp.status_code == 302
+def app(build_app, auth_settings: Settings):
+    return build_app(auth_settings)
 
 
 # --- folder service --------------------------------------------------------
@@ -97,7 +60,7 @@ def test_add_folder_registers(db, tmp_path: Path) -> None:
     assert result.path == str(target.resolve())
     assert result.name == "library"
     with session_scope() as session:
-        folder = session.query(LibraryFolder).one()
+        folder = session.scalars(select(LibraryFolder)).one()
         assert folder.last_scan_at is None
 
 
@@ -172,8 +135,8 @@ def test_remove_folder_deletes_index_but_not_files(db, root: Path) -> None:
     assert remove_folder(result.folder_id) is True
 
     with session_scope() as session:
-        assert session.query(LibraryFolder).count() == 0
-        assert session.query(Book).count() == 0
+        assert session.scalar(select(func.count(LibraryFolder.id))) == 0
+        assert session.scalar(select(func.count(Book.id))) == 0
     assert (root / "dune.epub").exists()
 
 
@@ -306,7 +269,7 @@ def test_folders_page_requires_login(client) -> None:
 
 
 def test_folders_page_renders_empty_state(client) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
 
     resp = client.get("/admin/folders")
 
@@ -316,7 +279,7 @@ def test_folders_page_renders_empty_state(client) -> None:
 
 
 def test_add_folder_form_renders(client) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
 
     resp = client.get("/admin/folders/new")
 
@@ -325,7 +288,7 @@ def test_add_folder_form_renders(client) -> None:
 
 
 def test_add_folder_requires_csrf(client, tmp_path: Path) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
     target = tmp_path / "books"
     target.mkdir()
 
@@ -335,7 +298,7 @@ def test_add_folder_requires_csrf(client, tmp_path: Path) -> None:
 
 
 def test_add_folder_via_ui_registers_and_scans(client, tmp_path: Path) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
     target = tmp_path / "ui"
     target.mkdir()
     make_epub(target / "dune.epub", title="Dune")
@@ -350,11 +313,11 @@ def test_add_folder_via_ui_registers_and_scans(client, tmp_path: Path) -> None:
     assert b"1 added" in resp.data
     assert target.name.encode() in resp.data
     with session_scope() as session:
-        assert session.query(Book).count() == 1
+        assert session.scalar(select(func.count(Book.id))) == 1
 
 
 def test_add_invalid_folder_shows_error(client) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
 
     resp = client.post(
         "/admin/folders",
@@ -366,7 +329,7 @@ def test_add_invalid_folder_shows_error(client) -> None:
 
 
 def test_add_relative_folder_shows_error(client) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
 
     resp = client.post(
         "/admin/folders",
@@ -378,7 +341,7 @@ def test_add_relative_folder_shows_error(client) -> None:
 
 
 def test_scan_route_rescans_folder(client, tmp_path: Path) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
     target = tmp_path / "scanme"
     target.mkdir()
     make_epub(target / "a.epub", title="A")
@@ -387,7 +350,7 @@ def test_scan_route_rescans_folder(client, tmp_path: Path) -> None:
         data={"path": str(target), "csrf_token": csrf_token(client)},
     )
     with session_scope() as session:
-        folder_id = session.query(LibraryFolder).one().id
+        folder_id = session.scalars(select(LibraryFolder)).one().id
 
     make_epub(target / "b.epub", title="B")
     resp = client.post(
@@ -399,11 +362,11 @@ def test_scan_route_rescans_folder(client, tmp_path: Path) -> None:
     assert resp.status_code == 200
     assert b"1 added" in resp.data
     with session_scope() as session:
-        assert session.query(Book).count() == 2
+        assert session.scalar(select(func.count(Book.id))) == 2
 
 
 def test_scan_unknown_folder_returns_404(client) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
 
     resp = client.post(
         "/admin/folders/4242/scan", data={"csrf_token": csrf_token(client)}
@@ -415,7 +378,7 @@ def test_scan_unknown_folder_returns_404(client) -> None:
 def test_scan_route_conflicts_when_already_running(
     client, tmp_path: Path
 ) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
     target = tmp_path / "busy"
     target.mkdir()
     client.post(
@@ -423,7 +386,7 @@ def test_scan_route_conflicts_when_already_running(
         data={"path": str(target), "csrf_token": csrf_token(client)},
     )
     with session_scope() as session:
-        folder_id = session.query(LibraryFolder).one().id
+        folder_id = session.scalars(select(LibraryFolder)).one().id
 
     lock = folder_lock(folder_id)
     assert lock.acquire(blocking=False)
@@ -442,7 +405,7 @@ def test_scan_route_conflicts_when_already_running(
 def test_delete_route_removes_folder_but_keeps_files(
     client, tmp_path: Path
 ) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
     target = tmp_path / "deleteme"
     target.mkdir()
     make_epub(target / "a.epub", title="A")
@@ -451,7 +414,7 @@ def test_delete_route_removes_folder_but_keeps_files(
         data={"path": str(target), "csrf_token": csrf_token(client)},
     )
     with session_scope() as session:
-        folder_id = session.query(LibraryFolder).one().id
+        folder_id = session.scalars(select(LibraryFolder)).one().id
 
     resp = client.post(
         f"/admin/folders/{folder_id}/delete",
@@ -462,13 +425,13 @@ def test_delete_route_removes_folder_but_keeps_files(
     assert resp.status_code == 200
     assert b"were not changed" in resp.data
     with session_scope() as session:
-        assert session.query(LibraryFolder).count() == 0
-        assert session.query(Book).count() == 0
+        assert session.scalar(select(func.count(LibraryFolder.id))) == 0
+        assert session.scalar(select(func.count(Book.id))) == 0
     assert (target / "a.epub").exists()
 
 
 def test_delete_unknown_folder_returns_404(client) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
 
     resp = client.post(
         "/admin/folders/4242/delete", data={"csrf_token": csrf_token(client)}
@@ -492,7 +455,7 @@ def test_browse_requires_login(client) -> None:
 
 
 def test_browse_page_renders_directories(client, tmp_path: Path) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
     (tmp_path / "media").mkdir()
 
     resp = client.get("/admin/folders/browse")
@@ -504,7 +467,7 @@ def test_browse_page_renders_directories(client, tmp_path: Path) -> None:
 
 
 def test_browse_outside_root_returns_400(client) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
 
     resp = client.get("/admin/folders/browse?path=/etc")
 
@@ -513,7 +476,7 @@ def test_browse_outside_root_returns_400(client) -> None:
 
 
 def test_browse_relative_path_returns_400(client) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
 
     resp = client.get("/admin/folders/browse?path=books")
 
@@ -522,7 +485,7 @@ def test_browse_relative_path_returns_400(client) -> None:
 
 
 def test_browse_drill_down_offers_up_link(client, tmp_path: Path) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
     child = tmp_path / "media" / "books"
     child.mkdir(parents=True)
     root = tmp_path.resolve()
@@ -541,7 +504,7 @@ def test_browse_drill_down_offers_up_link(client, tmp_path: Path) -> None:
 
 
 def test_add_form_prefills_path_from_query(client, tmp_path: Path) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
 
     resp = client.get(f"/admin/folders/new?path={tmp_path}")
 
@@ -550,7 +513,7 @@ def test_add_form_prefills_path_from_query(client, tmp_path: Path) -> None:
 
 
 def test_add_form_links_to_browser(client, tmp_path: Path) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
 
     resp = client.get(f"/admin/folders/new?path={tmp_path}")
 
@@ -560,7 +523,7 @@ def test_add_form_links_to_browser(client, tmp_path: Path) -> None:
 
 
 def test_browse_select_links_target_the_form(client, tmp_path: Path) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
     target = tmp_path / "picked"
     target.mkdir()
 
@@ -573,7 +536,7 @@ def test_browse_select_links_target_the_form(client, tmp_path: Path) -> None:
 def test_browse_marks_registered_and_conflicting_folders(
     client, tmp_path: Path
 ) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
     registered = tmp_path / "lib"
     registered.mkdir()
     holder = tmp_path / "holder" / "nested"
@@ -594,7 +557,7 @@ def test_browse_marks_registered_and_conflicting_folders(
 
 
 def test_browse_to_register_flow(client, tmp_path: Path) -> None:
-    _login(client)
+    login_admin(client, password=ADMIN_PASSWORD)
     target = tmp_path / "picked"
     target.mkdir()
     make_epub(target / "dune.epub", title="Dune")
@@ -614,4 +577,4 @@ def test_browse_to_register_flow(client, tmp_path: Path) -> None:
     assert resp.status_code == 200
     assert b"1 added" in resp.data
     with session_scope() as session:
-        assert session.query(Book).count() == 1
+        assert session.scalar(select(func.count(Book.id))) == 1

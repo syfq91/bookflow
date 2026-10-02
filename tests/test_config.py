@@ -3,9 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from bookflow.app import create_app
 from bookflow.config import Settings, resolve_session_secret
-from bookflow.database.database import reset_engine
 
 
 def _settings(tmp_path: Path, session_secret: str = "") -> Settings:
@@ -136,14 +134,10 @@ def test_configured_secret_is_used_verbatim(tmp_path: Path) -> None:
     assert not (settings.data_dir / ".session_secret").exists()
 
 
-def test_app_uses_generated_secret(tmp_path: Path) -> None:
+def test_app_uses_generated_secret(tmp_path: Path, build_app) -> None:
     settings = _settings(tmp_path)
-    reset_engine()
-    application = create_app(settings)
-    try:
-        stored = (settings.data_dir / ".session_secret").read_text(
-            encoding="ascii"
-        )
-        assert application.secret_key == stored.strip()
-    finally:
-        reset_engine()
+    application = build_app(settings, migrate=False)
+
+    stored = (settings.data_dir / ".session_secret").read_text(encoding="ascii")
+
+    assert application.secret_key == stored.strip()

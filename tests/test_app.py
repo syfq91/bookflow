@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from bookflow.app import create_app
 from bookflow.config import Settings
 
 
@@ -19,8 +18,8 @@ def test_root_redirects_to_admin(client) -> None:
     assert response.headers["Location"].endswith("/admin/")
 
 
-def test_factory_creates_data_dirs(settings: Settings) -> None:
-    create_app(settings)
+def test_factory_creates_data_dirs(settings: Settings, build_app) -> None:
+    build_app(settings, migrate=False)
 
     assert settings.data_dir.is_dir()
     assert settings.x3_cache_dir.is_dir()
