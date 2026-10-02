@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from functools import partial
 from xml.etree import ElementTree
 from xml.sax.saxutils import escape as xml_escape
 
@@ -12,7 +13,6 @@ from flask import (
     Blueprint,
     Response,
     abort,
-    current_app,
     request,
     send_file,
     url_for,
@@ -26,8 +26,8 @@ from bookflow.library.metadata import extract_cover
 from bookflow.library.paths import book_file
 from bookflow.opds.auth import (
     AUTH_DOCUMENT_TYPE,
-    authenticate,
     authentication_document,
+    require_basic_auth,
 )
 from bookflow.opds.generator import (
     ACQUISITION_TYPE,
@@ -45,18 +45,12 @@ from bookflow.optimizer.service import OptimizationError, optimize_book
 
 bp = Blueprint("opds", __name__, url_prefix="/opds")
 
+bp.before_request(partial(require_basic_auth, skip="opds.authentication"))
+
 PAGE_SIZE = 50
 FOLDER_SEGMENTS_LIMIT = 500
 PATH_MAX_DEPTH = 16
 PATH_MAX_LENGTH = 1024
-
-
-@bp.before_request
-def _require_basic_auth():
-    if request.endpoint == "opds.authentication":
-        return None
-    verifier = current_app.extensions["password_verifier"]
-    return authenticate(verifier, request.authorization)
 
 
 # --- discovery --------------------------------------------------------------

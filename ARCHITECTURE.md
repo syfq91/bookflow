@@ -267,8 +267,10 @@ directory itself is treated as rebuildable.
 ### 7.3 `opds/` — the catalog
 
 - `routes.py` — all catalog endpoints (table in §8). Shared helpers:
-  - `before_request` applies HTTP Basic to everything under `/opds` except
-    the public `/opds/authentication` document;
+  - `before_request` registers `require_basic_auth()` (from `auth.py`,
+    shared with `progression.py`) with `skip="opds.authentication"`, so
+    HTTP Basic covers everything under `/opds` except the public
+    authentication document;
   - book paths come from `library.paths.book_file()` (§7.2) — the **only**
     function that turns a book row into a path, so URL input can never
     escape the library;
@@ -290,7 +292,9 @@ directory itself is treated as rebuildable.
   `_acquisition()` points EPUBs at `/opds/{x3,x4}/download/<id>` and lets
   other formats fall back to the original download so no link is broken.
 - `auth.py` — `authenticate()` verifies the Basic header against the shared
-  `PasswordVerifier`; `unauthorized()` returns the OPDS Authentication
+  `PasswordVerifier`, and `require_basic_auth()` is the `before_request`
+  hook that applies it for a blueprint (with an optional `skip` endpoint);
+  `unauthorized()` returns the OPDS Authentication
   Document (`application/opds-authentication+json`) as the body **and** a
   `Link: rel="http://opds-spec.org/auth/document"` header, plus
   `WWW-Authenticate: Basic`.

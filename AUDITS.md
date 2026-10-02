@@ -60,10 +60,11 @@ reached via dynamic `url_for`), all templates and `static/style.css`
       write-method hook; `bp.before_request(require_csrf)` is registered
       on both the `admin` and `auth` blueprints, so the inline
       `validate_csrf()` checks in `login_post`/`logout` are gone.
-- [ ] **HTTP-Basic `before_request` duplicated**
-      `src/bookflow/opds/routes.py:54-59` ≡
-      `src/bookflow/opds/progression.py:43-46`. Move to a shared
-      `require_basic_auth(skip=...)` in `opds/auth.py`.
+- [x] **HTTP-Basic `before_request` duplicated** — **resolved
+      (2026-10-02)**: `require_basic_auth(skip=...)` in `opds/auth.py` is
+      the one hook; the catalog registers it with
+      `partial(..., skip="opds.authentication")`, the progression
+      blueprint registers it plain.
 - [ ] **File-download response duplicated**
       `src/bookflow/admin/routes.py:223-232` ≡
       `src/bookflow/opds/routes.py:514-523` (identical `send_file(...)`

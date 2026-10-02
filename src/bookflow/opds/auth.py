@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from flask import Response, url_for
+from flask import Response, current_app, request, url_for
 
 from bookflow.auth.service import PasswordVerifier
 
@@ -34,6 +34,19 @@ def authenticate(verifier: PasswordVerifier, authorization) -> Response | None:
     if not verifier.verify(authorization.username, authorization.password):
         return unauthorized()
     return None
+
+
+def require_basic_auth(*, skip: str | None = None) -> Response | None:
+    """Blueprint ``before_request`` hook enforcing HTTP Basic credentials.
+
+    ``skip`` names an endpoint served without credentials — the
+    Authentication Document itself. Returns None when the request may
+    proceed, otherwise the error response for the client.
+    """
+    if request.endpoint == skip:
+        return None
+    verifier = current_app.extensions["password_verifier"]
+    return authenticate(verifier, request.authorization)
 
 
 def authentication_document() -> bytes:

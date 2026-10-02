@@ -6,16 +6,18 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from flask import Blueprint, Response, abort, current_app, request
+from flask import Blueprint, Response, abort, request
 from sqlalchemy import select
 from werkzeug.exceptions import HTTPException
 
 from bookflow.database.database import session_scope
 from bookflow.database.models import Book, Progression
-from bookflow.opds.auth import authenticate
+from bookflow.opds.auth import require_basic_auth
 from bookflow.opds.generator import PROGRESSION_TYPE
 
 bp = Blueprint("progression", __name__, url_prefix="/opds/publications")
+
+bp.before_request(require_basic_auth)
 
 PROBLEM_TYPE = "application/problem+json"
 
@@ -39,12 +41,6 @@ class _Document:
     device_name: str
     title: str | None
     references: list[str] | None
-
-
-@bp.before_request
-def _require_basic_auth():
-    verifier = current_app.extensions["password_verifier"]
-    return authenticate(verifier, request.authorization)
 
 
 @bp.get("/<int:book_id>/progression")
