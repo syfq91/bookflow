@@ -7,21 +7,16 @@ reading-position sync.
 - [ARCHITECTURE.md](ARCHITECTURE.md) — how the code is organized
 - [REFERENCE.md](REFERENCE.md) — configuration, endpoints, development
 
-## Quick start (Docker)
+## Quick start 
+<strong>Docker</strong>
 
 1. Edit `docker-compose.yml`: set `OPDS_ADMIN_PASSWORD` and point the
    library bind at your books.
-2. Start it — either pull the prebuilt image:
+2. Start it:
 
    ```bash
    docker pull ghcr.io/syfq91/bookflow:latest
    docker compose up -d
-   ```
-
-   or build it locally:
-
-   ```bash
-   docker compose up -d --build
    ```
 
 3. Open <http://127.0.0.1:8000/> and sign in at `/admin/login`.
@@ -31,7 +26,8 @@ The library is mounted **read-only** at `/library`; register `/library`
 after first login. SQLite and the cache live in a named volume and
 migrations run automatically at start.
 
-## Quick start (bare metal)
+<details>
+<summary><strong>Bare metal</strong></summary>
 
 Requires [uv](https://docs.astral.sh/uv/); Python 3.14+ is managed by uv.
 
@@ -42,6 +38,8 @@ uv run flask --app bookflow.app run --port 8000
 ```
 
 Open <http://127.0.0.1:8000/> — it redirects to the admin dashboard.
+
+</details>
 
 ## Using BookFlow
 
