@@ -39,7 +39,8 @@ devices, cache contents, and scanner status with the last successful scan.
 collection: it lists the registered folders, and each folder name links
 into a plain FTP-style browser over the index — click down through folder
 levels, then click a file to download the original
-(`/admin/books/<id>/download`). Nothing is ever written to the library.
+(`/admin/books/<id>/download`). Levels with more than 50 files paginate
+via `?page=N`. Nothing is ever written to the library.
 The old `/admin/library` URL redirects here.
 
 ### Library folders

@@ -2,7 +2,7 @@
 
 Open findings from a codebase audit (2026-09-30, refreshed 2026-10-02):
 dead code, refactor candidates and best-practice gaps. Research only —
-nothing here has been fixed yet (section 1 resolved 2026-09-30; three
+nothing here has been fixed yet (section 1 resolved 2026-09-30; five
 items in §2/§3 resolved 2026-10-02).
 Tick items off as they land; delete entries once resolved.
 
@@ -52,11 +52,11 @@ reached via dynamic `url_for`), all templates and `static/style.css`
       `src/bookflow/library/service.py:40-52` ≡
       `src/bookflow/library/browse.py:52-66` (byte-identical sequence and
       user-facing messages), with a third variant in
-      `src/bookflow/library/scanner.py:207-214`. Extract e.g.
+      `src/bookflow/library/scanner.py:256-263`. Extract e.g.
       `resolve_readable_dir(value) -> tuple[Path | None, str | None]`
       into `library/paths.py`.
 - [ ] **CSRF enforced two different ways**
-      Blueprint hook `src/bookflow/admin/routes.py:46-50` vs inline
+      Blueprint hook `src/bookflow/admin/routes.py:50-54` vs inline
       `if not validate_csrf(): abort(400, ...)` at
       `src/bookflow/auth/routes.py:35-36` and `:87-88` (different
       blueprints is the root cause). Share one `require_csrf` decorator
@@ -66,14 +66,16 @@ reached via dynamic `url_for`), all templates and `static/style.css`
       `src/bookflow/opds/progression.py:43-46`. Move to a shared
       `require_basic_auth(skip=...)` in `opds/auth.py`.
 - [ ] **File-download response duplicated**
-      `src/bookflow/admin/routes.py:202-212` ≡
-      `src/bookflow/opds/routes.py:623-632` (identical `send_file(...)`
+      `src/bookflow/admin/routes.py:223-232` ≡
+      `src/bookflow/opds/routes.py:514-523` (identical `send_file(...)`
       body). One `send_book_response(target)` helper.
 - [ ] **Scan trigger + flash logic duplicated in `admin`**
-      `src/bookflow/admin/routes.py:109-125` vs `:275-288`. Make
-      `_run_scan()` return the flash payload; both callers flash it.
+      `src/bookflow/admin/routes.py:106-110` (`folder_create`) vs
+      `:119-129` (`folder_scan`), both calling `_run_scan()` at
+      `:303-316`. Make `_run_scan()` return the flash payload; both
+      callers flash it.
 - [ ] **Two `OperationalError` fallbacks with a duplicated string**
-      `src/bookflow/admin/routes.py:309-318` and `:320-334` return
+      `src/bookflow/admin/routes.py:337-345` and `:348-361` return
       *different shapes* for the same failure (health returns only
       `{"db_error"}`; dashboard returns a full default). `health.html:25`
       is only safe because of its guard. One `_stats_or_default()` helper
@@ -81,7 +83,7 @@ reached via dynamic `url_for`), all templates and `static/style.css`
 - [ ] **`get_folder()` loads the whole folder list for one row**
       `src/bookflow/library/service.py:88-91` builds
       `{f["id"]: f for f in list_folders()}`; called from
-      `admin/routes.py:112,131,153`. Use `session.get(LibraryFolder, id)`
+      `admin/routes.py:116,135,157`. Use `session.get(LibraryFolder, id)`
       for the single-row case.
 - [ ] **`library_statistics()` is 116 lines**
       `src/bookflow/health/service.py:43-158` — nine queries, six dict
@@ -100,19 +102,25 @@ reached via dynamic `url_for`), all templates and `static/style.css`
 
 ## 3. Best practice / correctness
 
-- [ ] **Scanner holds a DB session across the whole filesystem walk**
-      `src/bookflow/library/scanner.py:92-114` — `session_scope()`
-      wraps `_unavailable_reason()`, `_walk()` and `_reconcile()` (which
-      parses zip/PDF metadata per changed file). Violates "keep sessions
-      short; never hold one across I/O" and keeps a pooled connection
-      checked out for the whole scan. Do the FS work first, then open the
-      session only for the diff/apply and `last_scan_*` updates.
-- [ ] **`library_tree` loads an entire subtree with no `LIMIT`**
-      `src/bookflow/admin/routes.py:161-181` — prefix predicate only;
-      Python filters to direct children afterwards. Opening the root of a
-      large folder hydrates every descendant ORM row. Push the
-      "no further `/`" predicate into SQL and add pagination (mirror the
-      OPDS `_page()`/`PAGE_SIZE`).
+- [x] **Scanner holds a DB session across the whole filesystem walk**
+      — **resolved (2026-10-02)**: `_scan()` runs `_snapshot()` (folder
+      path + how the index sees its files) first, then
+      `_unavailable_reason()` / `_walk()` / `_changed_fields()` (metadata
+      for new or changed files) with **no session open**, and only then
+      one session for `_reconcile()` (diff/apply) plus the `last_scan_*`
+      writes. `_reconcile()` takes the pre-parsed `fields`, so the write
+      session never touches the disk; its fallback re-parses a row that
+      vanished under the scan lock. New test
+      (`test_scan_walks_and_parses_with_no_session_open`) asserts the
+      walk and the metadata parse both run with zero open sessions.
+- [x] **`library_tree` loads an entire subtree with no `LIMIT`**
+      — **resolved (2026-10-02)**: both predicates are SQL now —
+      `distinct()` + `limit()` for the child segments (mirroring
+      `opds/routes.py:_folder_level`) and `instr(rest, '/') == 0` for
+      direct children — selecting only the four columns the template
+      shows instead of hydrating whole `Book` rows. Books paginate at
+      `PAGE_SIZE` = 50 via `?page=` (`admin/routes.py:_page()` mirrors
+      the OPDS helper) with prev/next links in `library.html`.
 - [ ] **No logging configuration → `logger.info` is silently dropped**
       Loggers at `library/scanner.py:23`, `library/metadata.py:20`,
       `optimizer/service.py:19`; no `basicConfig`/`dictConfig` anywhere
@@ -170,7 +178,7 @@ reached via dynamic `url_for`), all templates and `static/style.css`
       locks login/returns 503) or requiring it from the environment.
 - [ ] **Cache hygiene vs invariant 4**
       - Deleting books/folders removes `optimized_books` rows
-        (`library/scanner.py:156-158`,
+        (`library/scanner.py:205-207`,
         `library/service.py:80-85`) but never the `.epub` files, so
         files accumulate (correctness holds — a row-less file is a miss —
         but `clear_optimized_cache()`'s file/row counts drift). Unlink
@@ -203,7 +211,8 @@ reached via dynamic `url_for`), all templates and `static/style.css`
 - [ ] **Scaffolding duplicated across ~400 lines**
       `def alembic_config` copied **11×**, the shadowed `app` fixture
       **9×** (in test files), `client`/`root` ~10×, `_login()` 5×
-      (`test_admin_books.py:57`, `test_auth.py:60`, `test_health.py:85`,
+            (`test_admin_books.py:58`,
+ `test_auth.py:60`, `test_health.py:85`,
       `test_library.py:75`, `test_optimizer.py:125`), plus five
       differently-shaped seed helpers (`test_opds.py:129 _insert`,
       `test_opds_folders.py:118 _insert`,
@@ -217,14 +226,14 @@ reached via dynamic `url_for`), all templates and `static/style.css`
       `tests/factories.py`, and update the AGENTS.md fixture bullet in the
       same commit.
 - [ ] **23 legacy `session.query()` calls** — AGENTS.md requires
-      `select()`. Sites: `test_scanner.py:59,64,186,194,195`,
-      `test_admin_books.py:248,269`,
+      `select()`. Sites: `test_scanner.py:61,66,188,196,197`,
+      `test_admin_books.py:284,305`,
       `test_library.py:100,175,176,353,390,402,426,454,465,466,617`,
       `test_optimizer.py:96`, `test_opds.py:126`,
       `test_database.py:60,77,97`. Mechanical swap to
       `session.scalars(select(...))` / `select(func.count(...))`.
 - [ ] **`test_unreadable_subdirectory_reports_partial` fails as root**
-      `tests/test_scanner.py:213-229` relies on `chmod 0o000`; root (typical
+      `tests/test_scanner.py:215-231` relies on `chmod 0o000`; root (typical
       CI/Docker) can still read the dir, so the assertion flips. Guard
       with `pytest.mark.skipif(os.geteuid() == 0, ...)`.
 - [ ] **Fragile negative assertion** `tests/test_health.py:181`
@@ -247,7 +256,7 @@ reached via dynamic `url_for`), all templates and `static/style.css`
       `-> Response | str | tuple[...]`.
 - [ ] Structural typing: `list[dict[str, object]]`
       (`library/service.py:94`) and `dict[str, object]`
-      (`health/service.py:43`, `admin/routes.py:309,320`) — consumers are
+      (`health/service.py:43`, `admin/routes.py:337,348`) — consumers are
       Jinja templates, so typos surface as template errors. Consider a
       frozen dataclass / `TypedDict`.
 
@@ -289,8 +298,10 @@ reached via dynamic `url_for`), all templates and `static/style.css`
    `_book_page`/`_acquisition_response`, `HTTPException` handlers on both
    OPDS blueprints, an app-level fallback for routing failures, docs
    refreshed, 5 new tests.
-2. **§3 scanner session split + `library_tree` limit** — correctness-
-   adjacent, user-visible performance.
+2. ~~§3 scanner session split + `library_tree` limit~~ **done
+   (2026-10-02)** — `_scan()` split into snapshot → filesystem work →
+   one write session; `library_tree` predicates pushed into SQL plus
+   `?page=` pagination; 2 new tests.
 3. **§4 test scaffolding + `session.query` migration** — biggest raw
    line-count win; update AGENTS.md in the same commit.
 4. **§2 mechanical dedup** (paths, CSRF, basic auth, download, scan

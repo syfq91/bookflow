@@ -114,7 +114,7 @@ bookflow/
 │   │                             health
 │   └── static/style.css
 │
-└── tests/                        239 tests (see §11)
+└── tests/                        275 tests (see §11)
 ```
 
 Deliberate deviations from the originally sketched layout: every ORM model
@@ -237,9 +237,14 @@ directory itself is treated as rebuildable.
 - `scanner.scan_folder(folder_id, extensions)`:
   - a per-folder `threading.Lock` makes concurrent scans of the same folder
     fail fast with `ScanInProgress` → HTTP `409`;
+  - one short session reads the folder path and the index's view of the
+    files; all filesystem work then runs with **no session open**, so a
+    scan never holds a pooled connection across the walk;
   - recursively walks the root (symlinks skipped), filters by extension,
-    and reads `size` + `mtime` for change detection;
-  - `_reconcile()` upserts new/changed books and drops deleted ones;
+    and reads `size` + `mtime` for change detection; metadata for new or
+    changed files is parsed before the write session opens;
+  - `_reconcile()` (the write session) upserts new/changed books, drops
+    deleted ones and records the `last_scan_*` fields;
   - **missing/unreadable root**: keeps the existing index and records
     `last_scan_status='error'` + `last_scan_error` so an unmounted disk can
     never wipe the catalog;
@@ -428,8 +433,8 @@ PUT /opds/publications/12/progression  (application/opds-progression+json)
 ```text
 POST /admin/folders/<id>/scan (session + CSRF)
   → folder lock: busy → flash + 409
-  → walk + metadata extract + reconcile (all writes inside session_scope)
-  → scan statistics recorded on the folder row → redirect + flash
+  → walk + metadata with no session open → one session_scope for
+    reconcile + the last_scan_* fields → redirect + flash
 ```
 
 ## 10. Concurrency, errors, security
@@ -467,7 +472,7 @@ threads (`check_same_thread=False` + WAL-free default journal).
 
 ## 11. Testing
 
-`tests/` (239 tests, `uv run pytest`):
+`tests/` (275 tests, `uv run pytest`):
 
 - `conftest.py` — temp `Settings` (fresh data dir + SQLite per test) and a
   bare app fixture; every suite that needs migrations shadows these with an

@@ -85,26 +85,47 @@ def scan_folder(folder_id: int, extensions: tuple[str, ...]) -> ScanResult:
         lock.release()
 
 
+def _snapshot(folder_id: int) -> tuple[Path, dict[str, tuple[int, datetime | None]]]:
+    """Read the folder path and how the index currently sees its files."""
+    with session_scope() as session:
+        folder = session.get(LibraryFolder, folder_id)
+        if folder is None:
+            raise LookupError(f"unknown library folder {folder_id}")
+        rows = session.execute(
+            select(Book.relative_path, Book.file_size, Book.file_modified_at).where(
+                Book.folder_id == folder_id
+            )
+        )
+        known = {path: (size, modified) for path, size, modified in rows}
+    return Path(folder.path), known
+
+
 def _scan(folder_id: int, extensions: tuple[str, ...]) -> ScanResult:
     started = time.monotonic()
     result = ScanResult(folder_id=folder_id)
+    root, known = _snapshot(folder_id)
+
+    # Filesystem work happens with no session open, so a scan never holds a
+    # pooled connection across the walk or the metadata parsing.
+    found: dict[str, tuple[int, float]] | None = None
+    fields: dict[str, dict[str, object]] = {}
+    unavailable = _unavailable_reason(root)
+    if unavailable is None:
+        found, walk_errors = _walk(root, extensions)
+        result.errors.extend(walk_errors)
+        if result.errors:
+            result.status = "partial"
+        fields = _changed_fields(root, found, known)
+    else:
+        result.status = "error"
+        result.errors.append(unavailable)
 
     with session_scope() as session:
         folder = session.get(LibraryFolder, folder_id)
         if folder is None:
             raise LookupError(f"unknown library folder {folder_id}")
-        root = Path(folder.path)
-
-        unavailable = _unavailable_reason(root)
-        if unavailable:
-            result.status = "error"
-            result.errors.append(unavailable)
-        else:
-            found, walk_errors = _walk(root, extensions)
-            result.errors.extend(walk_errors)
-            _reconcile(session, folder_id, root, found, result)
-            if result.errors:
-                result.status = "partial"
+        if found is not None:
+            _reconcile(session, folder_id, root, found, fields, result)
 
         result.duration = time.monotonic() - started
         folder.last_scan_at = _utcnow()
@@ -126,7 +147,28 @@ def _scan(folder_id: int, extensions: tuple[str, ...]) -> ScanResult:
     return result
 
 
-def _reconcile(session, folder_id: int, root: Path, found, result: ScanResult) -> None:
+def _changed_fields(
+    root: Path,
+    found: dict[str, tuple[int, float]],
+    known: dict[str, tuple[int, datetime | None]],
+) -> dict[str, dict[str, object]]:
+    """Parse metadata for every file that is new or changed since ``known``."""
+    fields: dict[str, dict[str, object]] = {}
+    for relative_path, (size, mtime) in sorted(found.items()):
+        modified = _mtime_to_datetime(mtime)
+        if known.get(relative_path) != (size, modified):
+            fields[relative_path] = _fields(root / relative_path, size, modified)
+    return fields
+
+
+def _reconcile(
+    session,
+    folder_id: int,
+    root: Path,
+    found: dict[str, tuple[int, float]],
+    fields: dict[str, dict[str, object]],
+    result: ScanResult,
+) -> None:
     existing = {
         book.relative_path: book
         for book in session.scalars(
@@ -137,21 +179,28 @@ def _reconcile(session, folder_id: int, root: Path, found, result: ScanResult) -
     for relative_path, (size, mtime) in sorted(found.items()):
         book = existing.get(relative_path)
         modified = _mtime_to_datetime(mtime)
+        if (
+            book is not None
+            and book.file_size == size
+            and book.file_modified_at == modified
+        ):
+            result.unchanged += 1
+            continue
+
+        value = fields.get(relative_path)
+        if value is None:
+            # Only folder removal can drop a row mid-scan, and it drops the
+            # folder too; parse here rather than lose the file's metadata.
+            value = _fields(root / relative_path, size, modified)
         if book is None:
             session.add(
-                Book(
-                    folder_id=folder_id,
-                    relative_path=relative_path,
-                    **_fields(root / relative_path, size, modified),
-                )
+                Book(folder_id=folder_id, relative_path=relative_path, **value)
             )
             result.added += 1
-        elif book.file_size != size or book.file_modified_at != modified:
-            for key, value in _fields(root / relative_path, size, modified).items():
-                setattr(book, key, value)
-            result.updated += 1
         else:
-            result.unchanged += 1
+            for key, item in value.items():
+                setattr(book, key, item)
+            result.updated += 1
 
     for relative_path in existing.keys() - found.keys():
         session.delete(existing[relative_path])

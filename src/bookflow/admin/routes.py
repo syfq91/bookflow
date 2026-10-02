@@ -15,7 +15,7 @@ from flask import (
     send_file,
     url_for,
 )
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.exc import OperationalError
 
 from bookflow.auth.decorators import login_required
@@ -41,6 +41,10 @@ bp = Blueprint("admin", __name__, url_prefix="/admin")
 _WRITE_METHODS = ("POST", "PUT", "PATCH", "DELETE")
 
 _DASHBOARD_COMPONENTS = ("Database", "Library", "OPDS", "epubkit")
+
+PAGE_SIZE = 50
+
+FOLDER_SEGMENTS_LIMIT = 500
 
 
 @bp.before_request
@@ -155,29 +159,43 @@ def library_tree(folder_id: int):
         abort(404)
     path = _clean_relative_path(request.args.get("path", ""))
     prefix = f"{path}/" if path else ""
+    page = _page()
+    offset = (page - 1) * PAGE_SIZE
 
-    dirs: set[str] = set()
-    books: list[dict[str, object]] = []
+    scope: list[ColumnElement[bool]] = [Book.folder_id == folder_id]
+    if prefix:
+        scope.append(Book.relative_path.startswith(prefix, autoescape=True))
+    rest = func.substr(Book.relative_path, len(prefix) + 1)
+    direct = func.instr(rest, "/") == 0
+
     with session_scope() as session:
-        rows = session.scalars(
-            select(Book).where(
-                Book.folder_id == folder_id,
-                Book.relative_path.startswith(prefix, autoescape=True),
-            )
+        dirs = sorted(
+            session.scalars(
+                select(func.substr(rest, 1, func.instr(rest, "/") - 1))
+                .where(*scope, func.instr(rest, "/") > 0)
+                .distinct()
+                .limit(FOLDER_SEGMENTS_LIMIT)
+            ),
+            key=str.casefold,
+        )
+        rows = session.execute(
+            select(Book.id, Book.relative_path, Book.file_format, Book.file_size)
+            .where(*scope, direct)
+            .order_by(func.lower(Book.relative_path), Book.relative_path)
+            .offset(offset)
+            .limit(PAGE_SIZE + 1)
         ).all()
-        for book in rows:
-            rest = book.relative_path[len(prefix) :]
-            if "/" in rest:
-                dirs.add(rest.split("/", 1)[0])
-            else:
-                books.append(
-                    {
-                        "id": book.id,
-                        "name": book.relative_path,
-                        "format": book.file_format,
-                        "size": book.file_size,
-                    }
-                )
+
+    has_next = len(rows) > PAGE_SIZE
+    books = [
+        {
+            "id": row.id,
+            "name": row.relative_path,
+            "format": row.file_format,
+            "size": row.file_size,
+        }
+        for row in rows[:PAGE_SIZE]
+    ]
 
     crumbs: list[tuple[str, str]] = [(folder["name"], "")]
     walked = ""
@@ -192,10 +210,12 @@ def library_tree(folder_id: int):
         crumbs=crumbs,
         parent=path.rsplit("/", 1)[0] if path else None,
         dirs=[
-            (name, f"{path}/{name}" if path else name)
-            for name in sorted(dirs, key=str.casefold)
+            (name, f"{path}/{name}" if path else name) for name in dirs
         ],
-        books=sorted(books, key=lambda item: str(item["name"]).casefold()),
+        books=books,
+        page=page,
+        has_prev=page > 1,
+        has_next=has_next,
     )
 
 
@@ -253,6 +273,14 @@ def _clean_relative_path(raw: str) -> str:
     ):
         abort(400, description="Invalid folder path.")
     return "/".join(parts)
+
+
+def _page() -> int:
+    """The requested page of a paginated admin list (mirrors the OPDS feeds)."""
+    try:
+        return max(int(request.args.get("page", "1")), 1)
+    except (TypeError, ValueError):
+        return 1
 
 
 def _browse_conflicts(result: BrowseResult, registered: list[str]) -> set[str]:

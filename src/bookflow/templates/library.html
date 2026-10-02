@@ -64,7 +64,26 @@
   </ul>
   {% endif %}
 
-  {% if not dirs and not books %}
+  {% if has_prev or has_next %}
+  <p class="browse-up">
+    {% if has_prev %}
+    <a
+      href="{{ url_for('admin.library_tree', folder_id=folder.id, path=path, page=page - 1) }}"
+      >&larr; Previous</a
+    >
+    {% endif %} {% if has_prev and has_next %}
+    <span class="muted" aria-hidden="true">&middot;</span>
+    {% endif %} {% if has_next %}
+    <a
+      href="{{ url_for('admin.library_tree', folder_id=folder.id, path=path, page=page + 1) }}"
+      >Next &rarr;</a
+    >
+    {% endif %}
+    <span class="muted">Page {{ page }}</span>
+  </p>
+  {% endif %}
+
+  {% if not dirs and not books and page == 1 %}
   <p class="muted">Empty folder.</p>
   {% endif %}
 </section>

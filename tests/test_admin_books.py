@@ -8,6 +8,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import select
 
+from bookflow.admin.routes import PAGE_SIZE
 from bookflow.app import create_app
 from bookflow.config import Settings
 from bookflow.database.database import reset_engine, session_scope
@@ -200,6 +201,41 @@ def test_tree_flat_folder_shows_files_only(client, root: Path) -> None:
     assert resp.status_code == 200
     assert b"<h2>Folders</h2>" not in resp.data
     assert b"solo.epub" in resp.data
+
+
+def test_tree_paginates_files(client, root: Path) -> None:
+    _login(client)
+    folder_id = add_folder(str(root)).folder_id
+    assert folder_id is not None
+    with session_scope() as session:
+        for index in range(PAGE_SIZE + 3):
+            session.add(
+                Book(
+                    folder_id=folder_id,
+                    relative_path=f"book{index:03d}.epub",
+                    file_format="EPUB",
+                    file_size=10,
+                )
+            )
+
+    resp = client.get(f"/admin/library/{folder_id}")
+
+    assert resp.status_code == 200
+    assert resp.data.count(b"/admin/books/") == PAGE_SIZE
+    assert b"page=2" in resp.data
+    assert b"Previous" not in resp.data
+
+    page_two = client.get(f"/admin/library/{folder_id}?page=2")
+
+    assert page_two.status_code == 200
+    assert page_two.data.count(b"/admin/books/") == 3
+    assert b"Previous" in page_two.data
+    assert b"page=3" not in page_two.data
+
+    fallback = client.get(f"/admin/library/{folder_id}?page=garbage")
+
+    assert fallback.status_code == 200
+    assert fallback.data.count(b"/admin/books/") == PAGE_SIZE
 
 
 # --- downloads --------------------------------------------------------------

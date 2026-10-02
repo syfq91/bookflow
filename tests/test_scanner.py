@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,7 @@ from alembic.config import Config
 from bookflow.config import Settings
 from bookflow.database.database import init_engine, reset_engine, session_scope
 from bookflow.database.models import Book, LibraryFolder, Progression
+from bookflow.library import scanner
 from bookflow.library.scanner import ScanInProgress, folder_lock, scan_folder
 from bookflow.library.service import add_folder
 from factories import make_epub, make_pdf
@@ -326,3 +328,39 @@ def test_concurrent_scan_rejected(folder_id: int) -> None:
 def test_scan_unknown_folder_raises(db) -> None:
     with pytest.raises(LookupError):
         scan_folder(9999, EXTENSIONS)
+
+
+def test_scan_walks_and_parses_with_no_session_open(
+    folder_id: int, root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    make_epub(root / "dune.epub", title="Dune")
+    open_sessions = 0
+    observed: list[int] = []
+    real_scope = scanner.session_scope
+
+    @contextmanager
+    def counting_scope():
+        nonlocal open_sessions
+        open_sessions += 1
+        try:
+            with real_scope() as session:
+                yield session
+        finally:
+            open_sessions -= 1
+
+    def observing(func):
+        def wrapper(*args, **kwargs):
+            observed.append(open_sessions)
+            return func(*args, **kwargs)
+
+        return wrapper
+
+    monkeypatch.setattr(scanner, "session_scope", counting_scope)
+    monkeypatch.setattr(scanner, "_walk", observing(scanner._walk))
+    monkeypatch.setattr(scanner, "_fields", observing(scanner._fields))
+
+    result = _scan(folder_id)
+
+    assert result.status == "ok"
+    assert result.added == 1
+    assert observed and set(observed) == {0}
