@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import select
 
+from bookflow.admin.routes import _dashboard_stats, _health_stats
 from bookflow.config import Settings
 from bookflow.database.database import session_scope
 from bookflow.database.models import Book, LibraryFolder, OptimizedBook
@@ -225,3 +226,19 @@ def test_dashboard_still_renders_without_migrations(
     assert resp.status_code == 200
     assert b"Database not initialized" in resp.data
     assert b"badge-error" in resp.data
+
+
+def test_stats_fallbacks_keep_the_complete_shape(unmigrated_client) -> None:
+    health = _health_stats()
+    dashboard = _dashboard_stats()
+
+    assert "Database not initialized" in str(health["db_error"])
+    assert health["scanner"] == {"last_success": None, "errors": []}
+    assert health["cache"] == {
+        "x3": {"books": 0, "size": 0},
+        "x4": {"books": 0, "size": 0},
+    }
+    assert health["progression"] == {"books": 0, "devices": []}
+    assert "Database not initialized" in str(dashboard["db_error"])
+    assert dashboard["books"] == 0
+    assert dashboard["cache"] == {"x3": 0, "x4": 0}

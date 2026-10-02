@@ -78,12 +78,13 @@ reached via dynamic `url_for`), all templates and `static/style.css`
       `/admin/folders`; `folder_create` and `folder_scan` are now one
       call each, and the create-route busy message is the shared
       "A scan for this folder is already in progress.".
-- [ ] **Two `OperationalError` fallbacks with a duplicated string**
-      `src/bookflow/admin/routes.py:337-345` and `:348-361` return
-      *different shapes* for the same failure (health returns only
-      `{"db_error"}`; dashboard returns a full default). `health.html:25`
-      is only safe because of its guard. One `_stats_or_default()` helper
-      returning the complete shape.
+- [x] **Two `OperationalError` fallbacks with a duplicated string** —
+      **resolved (2026-10-02)**: `_stats_or_default(load, empty)` in
+      `admin/routes.py` is the one `try/except OperationalError`, with
+      the message in `_DB_UNINITIALIZED_MESSAGE`; `_empty_health_stats()`
+      and `_empty_dashboard_stats()` each supply their page's *complete*
+      shape, so `health.html` no longer depends on its `db_error` guard
+      to render. New test asserts both fallback shapes.
 - [ ] **`get_folder()` loads the whole folder list for one row**
       `src/bookflow/library/service.py:88-91` builds
       `{f["id"]: f for f in list_folders()}`; called from

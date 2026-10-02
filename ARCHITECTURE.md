@@ -365,7 +365,10 @@ directory itself is treated as rebuildable.
   the FTP-style library browser (folder cards on `/admin/folders` link to
   per-folder directory levels from the index, files link to an
   original-file download), `POST /admin/cache/clear` (flash + redirect),
-  `/admin/health`.
+  `/admin/health`. Both stats loaders go through
+  `_stats_or_default(load, empty)`, which answers a broken/missing
+  database with that page's complete empty shape plus `db_error`, so
+  neither template needs its guard to render.
 - There is deliberately **no** upload, delete, rename, move, or metadata
   editing — the UI is a control surface, not a file manager.
 

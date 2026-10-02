@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from flask import (
@@ -38,6 +39,10 @@ bp = Blueprint("admin", __name__, url_prefix="/admin")
 bp.before_request(require_csrf)
 
 _DASHBOARD_COMPONENTS = ("Database", "Library", "OPDS", "epubkit")
+
+_DB_UNINITIALIZED_MESSAGE = (
+    "Database not initialized. Run: uv run alembic upgrade head"
+)
 
 PAGE_SIZE = 50
 
@@ -306,30 +311,46 @@ def _dashboard_checks(settings: Settings) -> list[HealthCheck]:
 
 
 def _health_stats() -> dict[str, object]:
-    try:
-        return library_statistics()
-    except OperationalError:
-        return {
-            "db_error": (
-                "Database not initialized. Run: uv run alembic upgrade head"
-            )
-        }
+    return _stats_or_default(library_statistics, _empty_health_stats)
 
 
 def _dashboard_stats() -> dict[str, object]:
+    return _stats_or_default(_query_stats, _empty_dashboard_stats)
+
+
+def _stats_or_default(
+    load: Callable[[], dict[str, object]],
+    empty: Callable[[], dict[str, object]],
+) -> dict[str, object]:
+    """Run a stats query, or answer with its complete empty shape."""
     try:
-        return _query_stats()
+        return load()
     except OperationalError:
-        return {
-            "books": 0,
-            "folders": 0,
-            "total_size": 0,
-            "last_scan": None,
-            "last_scan_duration": None,
-            "scan_errors": 0,
-            "cache": {"x3": 0, "x4": 0},
-            "db_error": "Database not initialized. Run: uv run alembic upgrade head",
-        }
+        return {**empty(), "db_error": _DB_UNINITIALIZED_MESSAGE}
+
+
+def _empty_health_stats() -> dict[str, object]:
+    return {
+        "total_books": 0,
+        "total_size": 0,
+        "formats": [],
+        "folders": [],
+        "cache": {"x3": {"books": 0, "size": 0}, "x4": {"books": 0, "size": 0}},
+        "progression": {"books": 0, "devices": []},
+        "scanner": {"last_success": None, "errors": []},
+    }
+
+
+def _empty_dashboard_stats() -> dict[str, object]:
+    return {
+        "books": 0,
+        "folders": 0,
+        "total_size": 0,
+        "last_scan": None,
+        "last_scan_duration": None,
+        "scan_errors": 0,
+        "cache": {"x3": 0, "x4": 0},
+    }
 
 
 def _query_stats() -> dict[str, object]:
