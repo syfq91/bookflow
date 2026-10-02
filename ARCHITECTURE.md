@@ -115,7 +115,7 @@ bookflow/
 │   │                             health
 │   └── static/style.css
 │
-└── tests/                        275 tests (see §11)
+└── tests/                        277 tests (see §11)
 ```
 
 Deliberate deviations from the originally sketched layout: every ORM model
@@ -230,7 +230,9 @@ directory itself is treated as rebuildable.
 - `service.add_folder()` validates a path (absolute, exists, directory,
   readable, normalized via `resolve()`, not nested inside another registered
   folder) and inserts a `library_folders` row. `remove_folder()` deletes only
-  the row — files on disk are untouched.
+  the row — files on disk are untouched. `list_folders()` adds the per-folder
+  index stats (books, size, last scan) and `get_folder(id)` reads one row
+  with its own stats query — both through the same `_folder_data()` shape.
 - `browse.browse_directory(raw_path, root)` lists one directory for the
   admin picker: read-only, clamped to `OPDS_BROWSE_ROOT` with
   `resolve()` + `is_relative_to()`, directories only, capped at 500
@@ -490,7 +492,7 @@ threads (`check_same_thread=False` + WAL-free default journal).
 
 ## 11. Testing
 
-`tests/` (275 tests, `uv run pytest`):
+`tests/` (277 tests, `uv run pytest`):
 
 - `conftest.py` — temp `Settings` (fresh data dir + SQLite per test), the
   `build_app` factory (runs `alembic upgrade head` unless `migrate=False`,

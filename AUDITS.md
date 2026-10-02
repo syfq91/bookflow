@@ -1,10 +1,9 @@
 # AUDITS.md
 
 Open findings from a codebase audit (2026-09-30, refreshed 2026-10-02):
-dead code, refactor candidates and best-practice gaps. Research only —
-nothing here has been fixed yet (section 1 resolved 2026-09-30; five
-items in §2/§3 resolved 2026-10-02).
-Tick items off as they land; delete entries once resolved.
+dead code, refactor candidates and best-practice gaps. Section 1 is
+cleared (2026-09-30); twelve items in §2/§3 and two in §4 were cleared
+2026-10-02. Tick items off as they land; delete entries once resolved.
 
 Scope: `src/bookflow/**`, `tests/**`, docs and deploy files. Vendored
 `src/bookflow/optimizer/epubkit/` was excluded. Every finding was verified
@@ -85,11 +84,11 @@ reached via dynamic `url_for`), all templates and `static/style.css`
       and `_empty_dashboard_stats()` each supply their page's *complete*
       shape, so `health.html` no longer depends on its `db_error` guard
       to render. New test asserts both fallback shapes.
-- [ ] **`get_folder()` loads the whole folder list for one row**
-      `src/bookflow/library/service.py:88-91` builds
-      `{f["id"]: f for f in list_folders()}`; called from
-      `admin/routes.py:116,135,157`. Use `session.get(LibraryFolder, id)`
-      for the single-row case.
+- [x] **`get_folder()` loads the whole folder list for one row** —
+      **resolved (2026-10-02)**: it now does `session.get(LibraryFolder,
+      folder_id)` plus one `count`/`sum` query for that row, and the dict
+      shape is shared with `list_folders()` through `_folder_data()`, so
+      the two can no longer drift.
 - [ ] **`library_statistics()` is 116 lines**
       `src/bookflow/health/service.py:43-158` — nine queries, six dict
       sections, one function; return shape is `dict[str, object]`
@@ -286,10 +285,10 @@ reached via dynamic `url_for`), all templates and `static/style.css`
   single credential, no secrets in logs; vendored epubkit untouched.
 - `os.environ` is read only in `config.py`.
 - `ruff check .` passes; `F401`/`F811` clean; no commented-out code, no
-  `TODO`/`FIXME`, no unreachable branches; test suite clean (273 tests).
+  `TODO`/`FIXME`, no unreachable branches; test suite clean (277 tests).
 - No queries in Jinja templates; no N+1 (`list_folders`,
-  `library_statistics`, `_query_stats` are aggregate; `get_folder` and
-  `paths.py:24` are fixed 2-query lookups).
+  `library_statistics`, `_query_stats` are aggregate; `get_folder` is a
+  fixed two-query lookup and `book_file()` one row).
 - Every template and static asset is referenced; `flash` categories are
   generated dynamically.
 - Test mocking is confined to the epubkit boundary, env vars and one
@@ -312,8 +311,13 @@ reached via dynamic `url_for`), all templates and `static/style.css`
    `_login`/`_parse`/`_insert*` and the shadowed fixtures were removed;
    all 23 `session.query()` sites moved to `select()`; AGENTS.md fixture
    bullet updated in the same commit.
-4. **§2 mechanical dedup** (paths, CSRF, basic auth, download, scan
-   flash, stats fallback, `get_folder`) — safe as small separate commits.
+4. ~~§2 mechanical dedup~~ **done (2026-10-02)** — paths, CSRF and
+   HTTP-Basic hooks shared in their owning modules; `send_book_response()`
+   serves every original-file download; `_scan_and_respond()` is the one
+   scan+flash path for both admin folder routes; `_stats_or_default()`
+   answers a missing database with each page's complete shape;
+   `get_folder()` reads a single row through the shared `_folder_data()`
+   builder.
 5. **§3 cache hygiene + security items** (`change-me` password, proxy-
    aware limiter).
 6. **§3 logging, §5 typing** — good first-issue batch.
