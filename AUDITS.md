@@ -71,11 +71,13 @@ reached via dynamic `url_for`), all templates and `static/style.css`
       (`conditional=True`, MIME type from `book_mime_type()`); it serves
       the admin original download, `/opds/download/<id>` and the X3/X4
       optimized download (which only overrides `download_name`).
-- [ ] **Scan trigger + flash logic duplicated in `admin`**
-      `src/bookflow/admin/routes.py:106-110` (`folder_create`) vs
-      `:119-129` (`folder_scan`), both calling `_run_scan()` at
-      `:303-316`. Make `_run_scan()` return the flash payload; both
-      callers flash it.
+- [x] **Scan trigger + flash logic duplicated in `admin`** — **resolved
+      (2026-10-02)**: `_scan_and_respond(folder_id, path)` in
+      `admin/routes.py` runs the scan, flashes the busy/scan message and
+      returns either the folders page (`409`) or the redirect to
+      `/admin/folders`; `folder_create` and `folder_scan` are now one
+      call each, and the create-route busy message is the shared
+      "A scan for this folder is already in progress.".
 - [ ] **Two `OperationalError` fallbacks with a duplicated string**
       `src/bookflow/admin/routes.py:337-345` and `:348-361` return
       *different shapes* for the same failure (health returns only

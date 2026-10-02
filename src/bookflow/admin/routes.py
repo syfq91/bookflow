@@ -93,11 +93,7 @@ def folder_create():
     result = add_folder(raw)
     if not result.ok:
         return render_template("add_folder.html", path=raw, error=result.error), 400
-    busy = _run_scan(result.folder_id, result.path)
-    if busy:
-        flash(busy, "error")
-        return _folders_response(), 409
-    return redirect(url_for("admin.folders"))
+    return _scan_and_respond(result.folder_id, result.path)
 
 
 @bp.post("/folders/<int:folder_id>/scan")
@@ -106,17 +102,7 @@ def folder_scan(folder_id: int):
     folder = get_folder(folder_id)
     if folder is None:
         abort(404)
-    extensions = current_app.config["SETTINGS"].scan_extensions
-    try:
-        result = scan_folder(folder_id, extensions)
-    except ScanInProgress:
-        flash("A scan for this folder is already in progress.", "error")
-        return _folders_response(), 409
-    flash(
-        _scan_message(folder["path"], result),
-        "ok" if result.status == "ok" else "error",
-    )
-    return redirect(url_for("admin.folders"))
+    return _scan_and_respond(folder_id, folder["path"])
 
 
 @bp.post("/folders/<int:folder_id>/delete")
@@ -283,20 +269,22 @@ def _browse_conflicts(result: BrowseResult, registered: list[str]) -> set[str]:
     return conflicts
 
 
-def _run_scan(folder_id: int | None, path: str | None) -> str | None:
-    """Scan a folder and flash the result; return a message when busy."""
+def _scan_and_respond(folder_id: int | None, path: str | None):
+    """Scan a folder, flash the outcome, and answer with its response."""
     if folder_id is None or path is None:
-        return "Folder could not be scanned."
+        flash("Folder could not be scanned.", "error")
+        return _folders_response(), 409
     extensions = current_app.config["SETTINGS"].scan_extensions
     try:
         result = scan_folder(folder_id, extensions)
     except ScanInProgress:
-        return f"Registered {path}; a scan is already running."
+        flash("A scan for this folder is already in progress.", "error")
+        return _folders_response(), 409
     flash(
         _scan_message(path, result),
         "ok" if result.status == "ok" else "error",
     )
-    return None
+    return redirect(url_for("admin.folders"))
 
 
 def _scan_message(path: str, result: ScanResult) -> str:
