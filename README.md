@@ -10,7 +10,7 @@ reading-position sync.
 ## Quick start 
 <strong>Docker</strong>
 
-1. Edit `docker-compose.yml`: set `OPDS_ADMIN_PASSWORD` and point the
+1. Edit `compose.yml`: set `OPDS_ADMIN_PASSWORD` and point the
    library bind at your books.
 2. Start it:
 
