@@ -246,7 +246,7 @@ uv run ruff check .
 ## Production
 
 ```bash
-uv run gunicorn --bind 0.0.0.0:8000 bookflow.app:app
+uv run gunicorn --bind 0.0.0.0:8000 bookflow.wsgi:app
 ```
 
 Mount library directories read-only; only the data directory needs write

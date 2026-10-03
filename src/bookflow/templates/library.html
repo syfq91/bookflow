@@ -1,22 +1,13 @@
 {% extends "layout.html" %}
+{% from "_rows.html" import browse_row %}
 
 {% block title %}Library · BookFlow{% endblock %}
 
 {% block content %}
 <section class="card">
-  <nav class="browse-crumb" aria-label="Breadcrumb">
-    {% for label, crumb_path in crumbs %}
-    {% if loop.last %}
-    <span aria-current="page">{{ label }}</span>
-    {% else %}
-    <a
-      href="{{ url_for('admin.library_tree', folder_id=folder.id, path=crumb_path) }}"
-      >{{ label }}</a
-    >
-    <span class="browse-sep" aria-hidden="true">/</span>
-    {% endif %}
-    {% endfor %}
-  </nav>
+  {% set crumb_endpoint = "admin.library_tree" %}
+  {% set crumb_kwargs = {"folder_id": folder.id} %}
+  {% include "_breadcrumbs.html" %}
   <p class="path">{{ folder.path }}{% if path %}/{{ path }}{% endif %}</p>
   <p class="browse-up">
     {% if parent is not none %}
@@ -33,13 +24,7 @@
   <h2>Folders</h2>
   <ul class="browse-list">
     {% for name, child in dirs %}
-    <li class="browse-row">
-      <a
-        class="browse-name"
-        href="{{ url_for('admin.library_tree', folder_id=folder.id, path=child) }}"
-        >{{ name }}</a
-      >
-    </li>
+    {{ browse_row(name, url_for('admin.library_tree', folder_id=folder.id, path=child)) }}
     {% endfor %}
   </ul>
   {% endif %}
@@ -48,18 +33,13 @@
   <h2>Files</h2>
   <ul class="browse-list">
     {% for book in books %}
-    <li class="browse-row">
-      <a
-        class="browse-name"
-        href="{{ url_for('admin.book_download', book_id=book.id) }}"
-        >{{ book.name }}</a
-      >
+    {% call browse_row(book.name, url_for('admin.book_download', book_id=book.id)) %}
       {% if book.format %}
       <span class="badge badge-ok">{{ book.format }}</span>
       {% endif %} {% if book.size %}
       <span class="muted">{{ book.size|filesizeformat }}</span>
       {% endif %}
-    </li>
+    {% endcall %}
     {% endfor %}
   </ul>
   {% endif %}

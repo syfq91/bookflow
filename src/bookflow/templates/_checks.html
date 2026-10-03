@@ -1,0 +1,9 @@
+{% for check in checks %}
+<dt>{{ check.component }}</dt>
+<dd>
+  <span class="badge badge-{{ check.status }}">{{ check.status|upper }}</span>
+  {% if with_detail|default(false) %}
+  <span class="muted">{{ check.detail }}</span>
+  {% endif %}
+</dd>
+{% endfor %}

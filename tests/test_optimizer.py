@@ -276,14 +276,17 @@ class _FailedReport:
 
 
 def test_optimizer_failure_returns_xml_500(
-    client, app, folder_id, root, monkeypatch
+    client, app, folder_id, root, monkeypatch, caplog
 ) -> None:
     book_id, _source = _library_book(root, folder_id)
     monkeypatch.setattr(
-        optimizer_service, "process_epub", lambda *args, **kwargs: _FailedReport()
+        optimizer_service, "process_epub", lambda *_args, **_kwargs: _FailedReport()
     )
 
     resp = _get(client, f"/opds/x3/download/{book_id}")
+
+    assert f"book_id={book_id}" in caplog.text
+    assert "DRM protected" in caplog.text
 
     assert resp.status_code == 500
     assert resp.headers["Content-Type"] == XML_TYPE
@@ -295,7 +298,7 @@ def test_optimizer_failure_returns_xml_500(
 
 
 def test_optimizer_exception_cleans_up(
-    client, app, folder_id, root, monkeypatch
+    client, app, folder_id, root, monkeypatch, caplog
 ) -> None:
     book_id, _source = _library_book(root, folder_id)
 
@@ -305,6 +308,9 @@ def test_optimizer_exception_cleans_up(
     monkeypatch.setattr(optimizer_service, "process_epub", explode)
 
     resp = _get(client, f"/opds/x4/download/{book_id}")
+
+    assert f"book_id={book_id}" in caplog.text
+    assert any(record.exc_info for record in caplog.records)
 
     assert resp.status_code == 500
     cache_file = app.config["SETTINGS"].x4_cache_dir / f"{book_id}.epub"

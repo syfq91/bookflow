@@ -58,7 +58,7 @@ Three rules define the system:
 | Optimization | vendored epubkit pipeline (Pillow, lxml, cssutils)  |
 | XML feeds    | stdlib `xml.etree.ElementTree`                      |
 | Prod server  | gunicorn                                            |
-| Quality      | pytest, ruff (`E,F,I,UP,B`, line length 88)         |
+| Quality      | pytest, ruff (`E,F,I,UP,B,C4,SIM,RUF059`, 88 cols)  |
 
 No FastAPI, no Redis, no Celery, no second HTTP service.
 
@@ -73,6 +73,7 @@ bookflow/
 │
 ├── src/bookflow/
 │   ├── app.py                    application factory + / → /admin/ + /healthz
+│   ├── wsgi.py                   module-level app for gunicorn
 │   ├── config.py                 frozen Settings dataclass (env → values)
 │   │
 │   ├── database/
@@ -104,7 +105,7 @@ bookflow/
 │   │
 │   ├── optimizer/                device-specific EPUB cache
 │   │   ├── service.py            optimize_book(), cache clear + prune
-│   │   ├── locks.py              per (book_id, profile) threading locks
+│   │   ├── locks.py              per-book locks (profile + progression)
 │   │   └── epubkit/              vendored pipeline (see NOTICE)
 │   │
 │   ├── health/                   diagnostics
@@ -115,7 +116,7 @@ bookflow/
 │   │                             health
 │   └── static/style.css
 │
-└── tests/                        296 tests (see §11)
+└── tests/                        300 tests (see §11)
 ```
 
 Deliberate deviations from the originally sketched layout: every ORM model
@@ -149,7 +150,9 @@ epubkit integration is a package `optimizer/epubkit/` rather than a single
 10. `GET /` → `302` to `/admin/` (convenience redirect for the browser).
 11. `GET /healthz` → `{"status": "ok"}` (public liveness probe).
 
-A module-level `app = create_app()` exists for `gunicorn bookflow.app:app`.
+Production servers build the app through `bookflow.wsgi`, whose
+module-level `app = create_app()` is what `gunicorn
+bookflow.wsgi:app` serves.
 Tests build apps through the `build_app` fixture factory
 (`tests/conftest.py`), which calls `reset_engine()` first and again on
 teardown.
@@ -514,7 +517,7 @@ threads (`check_same_thread=False` + WAL-free default journal).
 
 ## 11. Testing
 
-`tests/` (296 tests, `uv run pytest`):
+`tests/` (300 tests, `uv run pytest`):
 
 - `conftest.py` — temp `Settings` (fresh data dir + SQLite per test), the
   `build_app` factory (runs `alembic upgrade head` unless `migrate=False`,
@@ -542,7 +545,7 @@ uv run flask --app bookflow.app run --port 8000   # dev server
 uv run alembic upgrade head            # migrations
 uv run ruff check .                    # lint
 uv run pytest -q                       # tests
-uv run gunicorn --bind 0.0.0.0:8000 bookflow.app:app   # production
+uv run gunicorn --bind 0.0.0.0:8000 bookflow.wsgi:app   # production
 ```
 
 Mount library directories **read-only**; only `data/` (SQLite + cache)

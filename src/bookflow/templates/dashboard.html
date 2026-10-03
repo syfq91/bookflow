@@ -72,12 +72,7 @@
   <section class="card">
     <h2>Health</h2>
     <dl class="detail">
-      {% for check in checks %}
-      <dt>{{ check.component }}</dt>
-      <dd>
-        <span class="badge badge-{{ check.status }}">{{ check.status|upper }}</span>
-      </dd>
-      {% endfor %}
+      {% include "_checks.html" %}
     </dl>
   </section>
 </div>

@@ -1,13 +1,13 @@
 # AUDITS.md
 
-Open findings from a codebase audit (2026-09-30, refreshed 2026-10-03):
+Findings from a codebase audit (2026-09-30, refreshed 2026-10-03):
 dead code, refactor candidates and best-practice gaps. Section 1 is
 cleared (2026-09-30); twelve items in §2/§3 and two in §4 were cleared
-2026-10-02, three more in §3 on 2026-10-03, then the §3 logging finding,
-the `library_statistics` shape and all of §5 the same day. Twelve
-findings are still open (2 in §2, 5 in §3, 3 in §4, 2 in §6) and are
-planned as steps 7–12 under "Suggested order of attack". Tick items off
-as they land; delete entries once resolved.
+2026-10-02; the §3 logging finding, the `library_statistics` shape and
+all of §5 followed the same day, then the last twelve findings (2 in §2,
+5 in §3, 3 in §4, 2 in §6) on 2026-10-03 as steps 7–12 under "Suggested
+order of attack". **Nothing is open any more.** Tick items off as they
+land; delete entries once resolved.
 
 Scope: `src/bookflow/**`, `tests/**`, docs and deploy files. Vendored
 `src/bookflow/optimizer/epubkit/` was excluded. Every finding was verified
@@ -100,15 +100,19 @@ reached via dynamic `url_for`), all templates and `static/style.css`
       templates read is written down and the empty fallback in
       `admin/routes.py` has the same declared shape. The nine queries stay
       in one function.
-- [ ] **Template copy-paste**
-      `dashboard.html:74-82` ≡ `health.html:14-22` (badge loop);
-      `browse_folders.html:18-27` ≡ `library.html:7-19` (breadcrumbs);
-      `browse_folders.html:34-63` ≈ `library.html:32-67` (row blocks).
-      Extract `_checks.html` / `_breadcrumbs.html` includes or macros.
-- [ ] **Magic session key in template**
-      `templates/layout.html:16` hardcodes `session.get('admin')` while
-      the code uses `ADMIN_SESSION_KEY` (`auth/service.py:16`). Register
-      an `is_admin` Jinja global next to `csrf_token` (`app.py:76`).
+- [x] **Template copy-paste** — **resolved (2026-10-03)**: `_checks.html`
+      holds the badge loop (health passes `with_detail = true` for the
+      `check.detail` line, dashboard renders the badge alone),
+      `_breadcrumbs.html` renders `crumbs` through `crumb_endpoint` +
+      `crumb_kwargs`, and `_rows.html` exports the `browse_row(name, href)`
+      macro — folder rows call it bare, book/entry rows use `{% call %}`
+      for their badge/size/Select tail. CSS classes and rendered markup
+      are unchanged (`browse-row`, `browse-crumb`, `aria-current`,
+      `badge-*` assertions all still match).
+- [x] **Magic session key in template** — **resolved (2026-10-03)**:
+      `_is_admin()` (`app.py`) reads `session.get("admin")` and is
+      registered next to `csrf_token` in `jinja_env.globals`;
+      `layout.html` now says `{% if is_admin() %}`.
 
 ## 3. Best practice / correctness
 
@@ -168,7 +172,14 @@ reached via dynamic `url_for`), all templates and `static/style.css`
       have helped anyway: `_registered_folders()` opens a session first
       and would raise before it. A broken database now fails the root
       feed the same way it fails every child.
-- [ ] **Routing failures skip the OPDS Basic-auth hook**
+- [x] **Routing failures skip the OPDS Basic-auth hook** —
+      **resolved (2026-10-03)**: the app-level fallback calls
+      `require_basic_auth(skip="opds.authentication")` before it builds
+      the document, so `POST /opds/books` is `401` with the
+      Authentication Document without credentials and `405` with the XML
+      document once authenticated; `/opds/authentication` stays public.
+      Covers `test_wrong_method_without_credentials_returns_401` and
+      `test_authentication_document_stays_public`.
       A failed URL match leaves `request.url_rule` unset, so
       `request.blueprints` is empty and the blueprints'
       `@bp.before_request` never runs: `POST /opds/books` now answers
@@ -177,10 +188,10 @@ reached via dynamic `url_for`), all templates and `static/style.css`
       error coverage. Either call `authenticate()` from the app-level
       fallback before returning the document (skip
       `/opds/authentication`) or accept that routing errors are public.
-- [ ] **Login failure returns HTTP 200**
-      `src/bookflow/auth/routes.py:73-81` — 429/503 are used correctly
-      elsewhere, so 200 makes success indistinguishable from failure for
-      scripts and monitoring. Return 401 (or 422).
+- [x] **Login failure returns HTTP 200** — **resolved (2026-10-03)**:
+      `login_post` returns `401` for bad credentials (429 rate-limit and
+      503 unset-password keep their codes); the three failure paths in
+      `test_auth.py` now assert 401.
 - [x] **Rate limiter keyed on `request.remote_addr` with no proxy
       awareness** — **resolved (2026-10-03)**: `OPDS_TRUSTED_PROXY_HOPS`
       (`Settings.trusted_proxy_hops`, default `0`) wraps `app.wsgi_app`
@@ -216,22 +227,27 @@ reached via dynamic `url_for`), all templates and `static/style.css`
       under the profile lock too. Tests: scan prune keeps a sibling's
       cache, folder-delete prune, clear spares an in-flight generation,
       clear sweeps stale scratch.
-- [ ] **Optimizer failure logs omit the book id**
-      `src/bookflow/optimizer/service.py:227-233, 242` — `"optimization
-      failed for %s profile"` names only the profile. Add `book_id`/file
-      name; use `logger.exception` at `:242` now that step 6 makes the
-      record reach output.
-- [ ] **Module-level `app = create_app()` at import time**
-      `src/bookflow/app.py:115` reads env, creates `data/`, persists the
-      session secret and initializes the engine on import (already a
-      documented gotcha — `tests/conftest.py` has to `mkdtemp` at import
-      time). Consider a `bookflow/wsgi.py` factory target so importing
-      `bookflow.app` is side-effect free.
-- [ ] **Progression writes are not serialized per book**
-      `src/bookflow/opds/progression.py:73-91` read→compare→write has no
-      lock, so two devices PUTting simultaneously can hit a busy-timeout
-      500 instead of a clean 409. Mirror the per-book locks in
-      `optimizer/locks.py`.
+- [x] **Optimizer failure logs omit the book id** — **resolved
+      (2026-10-03)**: `_generate()` takes `book_id` and both messages
+      carry `book_id=<id> source=<file> profile=<…>`; the exception path
+      switched to `logger.exception` so the traceback is kept. Asserted
+      by `test_optimizer_failure_returns_xml_500` and
+      `test_optimizer_exception_cleans_up`.
+- [x] **Module-level `app = create_app()` at import time** —
+      **resolved (2026-10-03)**: the module-level `app` moved to a new
+      `bookflow/wsgi.py`; importing `bookflow.app` now reads no env and
+      touches no disk. Dockerfile `CMD`, `REFERENCE.md`, `ARCHITECTURE.md`
+      (§3, §4, §12) and `AGENTS.md` point at `bookflow.wsgi:app`, and the
+      "known gotcha" was rewritten around `create_app()` being the only
+      way an app is built.
+- [x] **Progression writes are not serialized per book** —
+      **resolved (2026-10-03)**: `progression_lock(book_id)` sits next to
+      `profile_lock` in `optimizer/locks.py` (same registry guard, own
+      key space) and the PUT view takes it across the whole
+      read→compare→write: `with progression_lock(book_id),
+      session_scope() as session`. `test_progression_put_waits_for_book_lock`
+      holds the lock and proves the request blocks (fails without it),
+      `test_progression_locks_are_per_book` pins the per-id identity.
 
 ## 4. Tests
 
@@ -255,18 +271,18 @@ reached via dynamic `url_for`), all templates and `static/style.css`
       `session.scalars(select(...))` (plus the count queries already on
       `select(func.count(...))`); `session.query` no longer appears in any
       `.py` file outside the vendored optimizer.
-- [ ] **`test_unreadable_subdirectory_reports_partial` fails as root**
-      `tests/test_scanner.py:202-217` relies on `chmod 0o000`; root
-      (typical CI/Docker) can still read the dir, so the assertion
-      flips. Guard with `pytest.mark.skipif(os.geteuid() == 0, ...)` and
-      skip the chmod entirely on that path.
-- [ ] **Fragile negative assertion** `tests/test_health.py:135`
-      `assert b"never" not in resp.data` passes as long as the literal
-      never appears anywhere on the page; assert on the rendered
-      `last_success` (folder name + timestamp) instead.
-- [ ] **Temp dir leaked per session** `tests/conftest.py:14`
-      `tempfile.mkdtemp(prefix="bookflow-test-")` is created at import
-      time and never removed.
+- [x] **`test_unreadable_subdirectory_reports_partial` fails as root** —
+      **resolved (2026-10-03)**: `@pytest.mark.skipif(os.geteuid() == 0,
+      reason="root reads regardless of mode bits")`.
+- [x] **Fragile negative assertion** `tests/test_health.py:135` —
+      **resolved (2026-10-03)**: the page is now asserted positively on
+      the rendered `last_scan_at` timestamp read back from the row; the
+      `never` negative is gone.
+- [x] **Temp dir leaked per session** `tests/conftest.py:14` —
+      **resolved (2026-10-03)**: import-time `mkdtemp` replaced by the
+      session-scoped autouse `_default_data_dir` fixture, which points
+      `OPDS_DATA_DIR` at a scratch dir and removes it at session end —
+      safe only once step 9 made the import side-effect free.
 
 ## 5. Type hints / docstrings (lower priority)
 
@@ -302,13 +318,23 @@ reached via dynamic `url_for`), all templates and `static/style.css`
       `# noqa: E402` in `tests/conftest.py` were removed (ruff does not
       flag the `os.environ.setdefault(...)`-before-import pattern), and
       `health/service.py:206`'s `# noqa: F401` is in use, so it stays.
-- [ ] Non-default ruff rules flag 62 findings across `ARG, SIM, C4, RUF059`
-      (54 `ARG001` + 2 `ARG005` + 2 `SIM117` + 1 `SIM102` + 1 `SIM300`
-      + 1 `C416` + 1 `RUF059`, mostly test fixture params — verify
-      before acting).
-- [ ] `health/service.py:265` imports vendored `process_epub` for a
-      health check (no execution) — harmless, but add a comment so it is
-      not mistaken for a violation of invariant 2.
+- [x] **Non-default ruff rules flag 62 findings across `ARG, SIM, C4,
+      RUF059`** — **resolved (2026-10-03)**: `C4`, `SIM` and `RUF059`
+      joined `[tool.ruff.lint] select`; the three findings that were not
+      in vendored code (`SIM300` + 2× `SIM117` in `tests/test_database.py`)
+      were fixed, and the two `ARG005` lambda params became `_args` /
+      `_kwargs`. The three remaining findings are vendored
+      `optimizer/epubkit/` code, kept out by extending its existing
+      per-file-ignores (invariant 7 — no edits to vendored files).
+      **`ARG` stays off**, deliberately: Flask's `<path:unknown>`
+      converters require the parameter by name and pytest fixture
+      parameters are part of the fixture contract, so all 54 `ARG001`
+      hits are false positives. The rationale is commented in
+      `pyproject.toml`.
+- [x] `health/service.py:265` imports vendored `process_epub` for a
+      health check (no execution) — **resolved (2026-10-03)**: the import
+      is now commented as an importability probe that cites invariant 2
+      (optimization runs only inside `optimize_book()`).
 
 ---
 
@@ -322,7 +348,7 @@ reached via dynamic `url_for`), all templates and `static/style.css`
   single credential, no secrets in logs; vendored epubkit untouched.
 - `os.environ` is read only in `config.py`.
 - `ruff check .` passes; `F401`/`F811` clean; no commented-out code, no
-  `TODO`/`FIXME`, no unreachable branches; test suite clean (296 tests).
+  `TODO`/`FIXME`, no unreachable branches; test suite clean (300 tests).
 - No queries in Jinja templates; no N+1 (`list_folders`,
   `library_statistics`, `_query_stats` are aggregate; `get_folder` is a
   fixed two-query lookup and `book_file()` one row).
@@ -367,53 +393,54 @@ reached via dynamic `url_for`), all templates and `static/style.css`
    annotated, `HealthStats` / `DashboardStats` / `FolderData`
    TypedDicts; 8 new tests.
 
-Steps 1–6 are done. What remains — 2 findings in §2, 5 in §3, 3 in §4
-and 2 in §6 — is planned below: correctness first, then the import
-redesign the test cleanup depends on, then refactors and cosmetics.
-Each step keeps the standing verify gate (`ruff check .` + full
-`pytest`) before its commit.
+All twelve steps are done: correctness first (7–8), then the import
+redesign the test cleanup depended on (9), then test robustness (10),
+refactors (11) and cosmetics (12). Each step kept the standing verify
+gate (`ruff check .` + full `pytest`) before its commit; the gate after
+step 12 was `ruff` clean and 300 tests green.
 
-7. **§3 HTTP correctness** — two API-visible fixes. `login_post` answers
-   `401` for a wrong password instead of `200` (429 and 503 keep their
-   codes); update `test_auth.py` and any doc that states the status. For
-   routing failures, make `create_app`'s app-level fallback run
-   `authenticate()` (skipping `opds.authentication`) *before* building
-   the error document, so `POST /opds/books` is `401` with the
-   Authentication Document without credentials and `405` with the XML
-   document once authenticated — a routed request already behaves that
-   way. Tests in `test_opds.py` for both halves; if the decision goes the
-   other way, write "routing errors are public" into `REFERENCE.md`
-   instead.
-8. **§3 optimizer + progression hardening** — put the `book_id` and file
-   name into both optimizer failure messages
-   (`optimizer/service.py:227-233, 242`) and switch the second to
-   `logger.exception` so the traceback is kept. Add a per-book lock
-   (next to `profile_lock` in `optimizer/locks.py`) around progression's
-   read→compare→write so concurrent PUTs answer `201`/`409` instead of a
-   SQLite busy-timeout `500`. Tests: the log line names the book; two
-   simultaneous PUTs never 500.
-9. **§3 import-time side effects** — move `app = create_app()` out of
-   `bookflow/app.py` into a new `bookflow/wsgi.py` so importing
-   `bookflow.app` reads no env and touches no disk; point the Dockerfile
-   `CMD`, `REFERENCE.md`, `ARCHITECTURE.md` (§4, §12) and `AGENTS.md` at
-   `bookflow.wsgi:app` and refresh the AGENTS "known gotcha".
-   Prerequisite for step 10.
-10. **§4 test robustness** — three fixes: a `skipif(os.geteuid() == 0)`
-    mark on the unreadable-subdirectory test; replace
-    `assert b"never" not in resp.data` with an assertion on the rendered
-    `last_success`; and drop `tests/conftest.py:14`'s import-time
-    `mkdtemp` for a fixture-owned data dir removed at session end — safe
-    only after step 9 made the module import side-effect free.
-11. **§2 templates** — register an `is_admin` Jinja global next to
-    `csrf_token` and use it in `layout.html:16`; extract the shared
-    chunks into `_checks.html` (dashboard/health badge loop),
-    `_breadcrumbs.html` (browse/library crumbs) and a row-block macro for
-    the browse/library folder + book rows. Keep every CSS class and the
-    rendered markup comparable, and the existing template tests green.
-12. **§6 cosmetics** — comment the `process_epub` health import as an
-    importability check only (invariant 2), then re-run
-    `ruff check --select ARG,SIM,C4,RUF059` (62 findings today), fix the
-    real ones (`C416`, `SIM*`, `RUF059`, non-fixture `ARG`), and decide
-    on evidence whether those rule sets join `[tool.ruff.lint] select` —
-    pytest fixture params may argue for leaving `ARG` off or scoping it
-    with `per-file-ignores` instead of churning the tests.
+7. ~~§3 HTTP correctness~~ **done (2026-10-03)** — `login_post` answers
+   `401` for bad credentials (429/503 unchanged) and the three failure
+   paths in `test_auth.py` assert it; the app-level routing fallback
+   runs `require_basic_auth(skip="opds.authentication")` under the OPDS
+   prefixes *before* building the document, so `POST /opds/books` is
+   `401` with the Authentication Document unauthenticated and `405` with
+   the XML document once authenticated. Two new `test_opds.py` tests
+   cover both halves and that `/opds/authentication` stays a public
+   `405`.
+8. ~~§3 optimizer + progression hardening~~ **done (2026-10-03)** —
+   `_generate(book_id, source, cache_file, profile)` now logs
+   `book_id=<id> source=<file> profile=<…>` at both failure sites and
+   the exception path uses `logger.exception` (traceback kept); both
+   messages are asserted by the existing 500 tests. `progression_lock`
+   (next to `profile_lock`, own key space under the same guard) wraps the
+   PUT's read→compare→write, with a lock-blocked test that fails without
+   it and a per-book identity test.
+9. ~~§3 import-time side effects~~ **done (2026-10-03)** —
+   `app = create_app()` lives in the new `bookflow/wsgi.py`; importing
+   `bookflow.app` reads no env and touches no disk. Dockerfile `CMD`,
+   `REFERENCE.md`, `ARCHITECTURE.md` (§3 layout, §4, §12), `AGENTS.md`
+   and the known-gotcha bullet all say `bookflow.wsgi:app` now
+   (`flask --app bookflow.app` still uses the factory).
+10. ~~§4 test robustness~~ **done (2026-10-03)** — root now skips the
+    unreadable-subdirectory test; the health page is asserted on the
+    rendered `last_scan_at` timestamp instead of a `never` negative; and
+    the import-time `mkdtemp` in `tests/conftest.py` became the
+    session-scoped autouse `_default_data_dir` fixture, which removes its
+    scratch dir at session end.
+11. ~~§2 templates~~ **done (2026-10-03)** — `is_admin` is registered
+    next to `csrf_token` and used by `layout.html`; `_checks.html`
+    (health passes `with_detail`), `_breadcrumbs.html` (`crumbs` +
+    `crumb_endpoint`/`crumb_kwargs`) and the `browse_row` macro in
+    `_rows.html` (`{% call %}` carries the badge/size/Select tail) cover
+    the three copy-paste pairs. CSS classes and markup are unchanged and
+    the template tests stayed green.
+12. ~~§6 cosmetics~~ **done (2026-10-03)** — the `process_epub` import
+    carries an invariant-2 comment; `C4`/`SIM`/`RUF059` joined
+    `[tool.ruff.lint] select` after fixing the three non-vendored
+    findings (`SIM300`, 2× `SIM117` in `tests/test_database.py`) and the
+    two `ARG005` lambdas, with the vendored `epubkit/` findings excluded
+    through the existing per-file-ignores (invariant 7 — untouched).
+    `ARG` stays off with a `pyproject.toml` comment: `<path:unknown>`
+    needs its parameter by name and fixture params are contractual, so
+    its 54 hits are false positives.

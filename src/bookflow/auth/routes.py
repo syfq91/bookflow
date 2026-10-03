@@ -77,7 +77,7 @@ def login_post() -> str | Response | tuple[str, int]:
             error="Invalid username or password.",
             next_target=next_target,
         ),
-        200,
+        401,
     )
 
 

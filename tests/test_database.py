@@ -26,7 +26,7 @@ def test_upgrade_head_creates_all_tables(settings: Settings) -> None:
     engine = init_engine(settings)
     tables = set(inspect(engine).get_table_names())
 
-    assert EXPECTED_TABLES <= tables
+    assert tables >= EXPECTED_TABLES
     assert "alembic_version" in tables
 
 
@@ -63,10 +63,9 @@ def test_book_relative_path_unique(settings: Settings) -> None:
         session.flush()
         session.add(Book(folder_id=folder.id, relative_path="dune.epub"))
 
-    with pytest.raises(IntegrityError):
-        with session_scope() as session:
-            folder_id = session.scalars(select(LibraryFolder)).one().id
-            session.add(Book(folder_id=folder_id, relative_path="dune.epub"))
+    with pytest.raises(IntegrityError), session_scope() as session:
+        folder_id = session.scalars(select(LibraryFolder)).one().id
+        session.add(Book(folder_id=folder_id, relative_path="dune.epub"))
 
 
 def test_optimized_book_profile_unique(settings: Settings) -> None:
@@ -83,7 +82,6 @@ def test_optimized_book_profile_unique(settings: Settings) -> None:
         session.add(OptimizedBook(book_id=book.id, profile="x4"))
         session.add(OptimizedBook(book_id=book.id, profile="x3"))
 
-    with pytest.raises(IntegrityError):
-        with session_scope() as session:
-            book_id = session.scalars(select(Book)).one().id
-            session.add(OptimizedBook(book_id=book_id, profile="x4"))
+    with pytest.raises(IntegrityError), session_scope() as session:
+        book_id = session.scalars(select(Book)).one().id
+        session.add(OptimizedBook(book_id=book_id, profile="x4"))

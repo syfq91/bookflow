@@ -262,6 +262,8 @@ def _cache_check(settings: Settings) -> HealthCheck:
 
 def _optimizer_check() -> HealthCheck:
     try:
+        # Importability only — optimization itself runs solely inside
+        # optimize_book() (invariant 2), never from a health check.
         from bookflow.optimizer.epubkit import process_epub  # noqa: F401
     except Exception as exc:  # pragma: no cover - depends on environment
         return HealthCheck("epubkit", "error", f"Pipeline unavailable: {exc}")

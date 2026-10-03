@@ -39,6 +39,7 @@ ACQ = "application/atom+xml;profile=opds-catalog;kind=acquisition"
 ACQUISITION_REL = "http://opds-spec.org/acquisition"
 IMAGE_REL = "http://opds-spec.org/image"
 THUMB_REL = "http://opds-spec.org/image/thumbnail"
+AUTH_DOCUMENT_TYPE = "application/opds-authentication+json"
 SUBSECTION_REL = "subsection"
 
 
@@ -572,6 +573,23 @@ def test_wrong_method_returns_xml_405(client, folder_id: int) -> None:
     assert resp.headers["Content-Type"] == "application/xml"
     root = ElementTree.fromstring(resp.data)
     assert root.findtext("code") == "405"
+
+
+def test_wrong_method_without_credentials_returns_401(client) -> None:
+    """A routing failure authenticates: no blueprint hook runs for it."""
+    resp = client.post("/opds/books")
+
+    assert resp.status_code == 401
+    assert resp.headers["Content-Type"].startswith(AUTH_DOCUMENT_TYPE)
+    assert resp.headers["WWW-Authenticate"] == 'Basic realm="BookFlow"'
+
+
+def test_authentication_document_stays_public(client) -> None:
+    """A wrong method on the Authentication Document is still a 405."""
+    resp = client.post("/opds/authentication")
+
+    assert resp.status_code == 405
+    assert resp.headers["Content-Type"] == "application/xml"
 
 
 def test_unhandled_error_returns_xml_500(client, monkeypatch) -> None:

@@ -128,11 +128,14 @@ def test_scanner_reports_last_successful_scan(
 ) -> None:
     make_epub(root / "dune.epub", title="Dune")
     _scan(folder_id)
+    with session_scope() as session:
+        folder = session.get(LibraryFolder, folder_id)
+        last_scan = folder.last_scan_at
 
     resp = _health(client)
 
     assert b"Scanner" in resp.data
-    assert b"never" not in resp.data
+    assert last_scan.strftime("%Y-%m-%d %H:%M").encode() in resp.data
 
 
 def test_scanner_reports_folder_errors(client, folder_id) -> None:

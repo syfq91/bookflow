@@ -1,0 +1,6 @@
+{% macro browse_row(name, href) %}
+<li class="browse-row">
+  <a class="browse-name" href="{{ href }}">{{ name }}</a>
+  {% if caller is defined %}{{ caller() }}{% endif %}
+</li>
+{% endmacro %}

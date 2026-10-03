@@ -15,6 +15,7 @@ from bookflow.database.database import session_scope
 from bookflow.database.models import Book, Progression
 from bookflow.opds.auth import require_basic_auth
 from bookflow.opds.generator import PROGRESSION_TYPE
+from bookflow.optimizer.locks import progression_lock
 
 bp = Blueprint("progression", __name__, url_prefix="/opds/publications")
 
@@ -60,7 +61,7 @@ def publication_progression(book_id: int) -> Response:
 
 @bp.put("/<int:book_id>/progression")
 def update_publication_progression(book_id: int) -> Response:
-    with session_scope() as session:
+    with progression_lock(book_id), session_scope() as session:
         if session.get(Book, book_id) is None:
             abort(404)
         if request.mimetype != PROGRESSION_TYPE:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from flask import Flask, Response, jsonify, redirect, request, url_for
+from flask import Flask, Response, jsonify, redirect, request, session, url_for
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -13,10 +13,16 @@ from bookflow.auth.routes import bp as auth_bp
 from bookflow.auth.service import LoginRateLimiter, PasswordVerifier, ensure_csrf_token
 from bookflow.config import Settings, resolve_session_secret
 from bookflow.database.database import init_engine
+from bookflow.opds.auth import require_basic_auth
 from bookflow.opds.progression import bp as progression_bp
 from bookflow.opds.progression import problem_document
 from bookflow.opds.routes import bp as opds_bp
 from bookflow.opds.routes import error_document
+
+
+def _is_admin() -> bool:
+    """Jinja global: is the current session signed in as the admin?"""
+    return bool(session.get("admin"))
 
 
 def _configure_logging(level_name: str) -> None:
@@ -74,6 +80,7 @@ def create_app(settings: Settings | None = None) -> Flask:
     )
     app.extensions["login_rate_limiter"] = LoginRateLimiter()
     app.jinja_env.globals["csrf_token"] = ensure_csrf_token
+    app.jinja_env.globals["is_admin"] = _is_admin
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp)
@@ -95,10 +102,13 @@ def create_app(settings: Settings | None = None) -> Flask:
         """Handle the failures that blueprints never see.
 
         A failed URL match leaves ``request.url_rule`` unset, so
-        ``request.blueprints`` is empty and the OPDS handlers registered
-        with ``@bp.errorhandler`` are skipped. Requests below an OPDS
-        prefix still get their error document; every other request is
-        returned unchanged, which is Flask's default HTML error page.
+        ``request.blueprints`` is empty and neither the blueprints'
+        ``before_request`` hooks nor their ``@bp.errorhandler`` run.
+        Requests below an OPDS prefix therefore authenticate here — the
+        same Basic-auth check a routed request gets — before their error
+        document is built; the Authentication Document itself stays
+        public. Every other request is returned unchanged, which is
+        Flask's default HTML error page.
         """
         path = request.path
         for prefix, document in (
@@ -106,10 +116,11 @@ def create_app(settings: Settings | None = None) -> Flask:
             (opds_bp.url_prefix, error_document),
         ):
             if prefix and path.startswith(prefix):
+                if path != url_for("opds.authentication"):
+                    denied = require_basic_auth(skip="opds.authentication")
+                    if denied is not None:
+                        return denied
                 return document(error)
         return error
 
     return app
-
-
-app = create_app()

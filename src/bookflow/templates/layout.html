@@ -13,7 +13,7 @@
     <header class="site-header">
       <a class="brand" href="{{ url_for('admin.dashboard') }}">BookFlow</a>
       <nav>
-        {% if session.get('admin') %}
+        {% if is_admin() %}
         <a href="{{ url_for('admin.dashboard') }}">Dashboard</a>
         <a href="{{ url_for('admin.folders') }}">Library</a>
         <a href="{{ url_for('admin.health') }}">Health</a>

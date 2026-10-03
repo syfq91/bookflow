@@ -47,7 +47,7 @@ def test_valid_login_redirects_to_dashboard(migrated_client) -> None:
 def test_invalid_username_rejected(client) -> None:
     resp = login_admin(client, username="root", password=ADMIN_PASSWORD)
 
-    assert resp.status_code == 200
+    assert resp.status_code == 401
     assert b"Invalid username or password." in resp.data
     assert client.get("/admin/").status_code == 302
 
@@ -55,7 +55,7 @@ def test_invalid_username_rejected(client) -> None:
 def test_invalid_password_rejected(client) -> None:
     resp = login_admin(client, password="wrong")
 
-    assert resp.status_code == 200
+    assert resp.status_code == 401
     assert b"Invalid username or password." in resp.data
     assert client.get("/admin/").status_code == 302
 
@@ -225,7 +225,7 @@ def test_safe_next_target() -> None:
 
 def test_rate_limit_blocks_after_max_failures(client, app) -> None:
     for _ in range(5):
-        assert login_admin(client, password="wrong").status_code == 200
+        assert login_admin(client, password="wrong").status_code == 401
 
     resp = login_admin(client, password=ADMIN_PASSWORD)
 
@@ -299,7 +299,7 @@ def test_rate_limit_ignores_forwarded_header_by_default(client, app) -> None:
     forwarded = {"X-Forwarded-For": "203.0.113.7"}
 
     for _ in range(5):
-        assert _failed_login(client, forwarded) == 200
+        assert _failed_login(client, forwarded) == 401
     assert _failed_login(client, forwarded) == 429
 
     limiter = app.extensions["login_rate_limiter"]
@@ -318,10 +318,10 @@ def test_rate_limit_keys_on_forwarded_client_when_proxy_trusted(
     second = {"X-Forwarded-For": "203.0.113.8"}
 
     for _ in range(5):
-        assert _failed_login(client, first) == 200
+        assert _failed_login(client, first) == 401
 
     assert _failed_login(client, first) == 429
-    assert _failed_login(client, second) == 200
+    assert _failed_login(client, second) == 401
 
     limiter = application.extensions["login_rate_limiter"]
     assert limiter.is_blocked(("203.0.113.7", "admin"))

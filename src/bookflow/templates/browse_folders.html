@@ -1,4 +1,5 @@
 {% extends "layout.html" %}
+{% from "_rows.html" import browse_row %}
 
 {% block title %}Browse folders · BookFlow{% endblock %}
 
@@ -15,16 +16,10 @@
     <a href="{{ url_for('admin.folder_new', path=raw) }}">Back to form</a>
   </div>
   {% else %}
-  <nav class="browse-crumb" aria-label="Breadcrumb">
-    {% for label, crumb_path in browse.crumbs %}
-    {% if loop.last %}
-    <span aria-current="page">{{ label }}</span>
-    {% else %}
-    <a href="{{ url_for('admin.folder_browse', path=crumb_path) }}">{{ label }}</a>
-    <span class="browse-sep" aria-hidden="true">/</span>
-    {% endif %}
-    {% endfor %}
-  </nav>
+  {% set crumbs = browse.crumbs %}
+  {% set crumb_endpoint = "admin.folder_browse" %}
+  {% set crumb_kwargs = {} %}
+  {% include "_breadcrumbs.html" %}
   <p class="path">{{ browse.path }}</p>
   {% if browse.parent %}
   <p class="browse-up">
@@ -34,12 +29,7 @@
   {% if browse.entries %}
   <ul class="browse-list">
     {% for name, entry_path in browse.entries %}
-    <li class="browse-row">
-      <a
-        class="browse-name"
-        href="{{ url_for('admin.folder_browse', path=entry_path) }}"
-        >{{ name }}</a
-      >
+    {% call browse_row(name, url_for('admin.folder_browse', path=entry_path)) %}
       {% if entry_path in registered %}
       <span class="badge badge-ok">registered</span>
       {% elif entry_path in conflicts %}
@@ -50,7 +40,7 @@
         href="{{ url_for('admin.folder_new', path=entry_path) }}"
         >Select</a
       >
-    </li>
+    {% endcall %}
     {% endfor %}
   </ul>
   {% if browse.truncated %}

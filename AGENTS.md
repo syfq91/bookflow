@@ -17,12 +17,12 @@ than greenfield work.
 ```bash
 uv sync                                   # install deps
 uv run ruff check .                       # lint (gate before every commit)
-uv run pytest -q                          # full suite: 296 tests, ~6 min
+uv run pytest -q                          # full suite: 300 tests, ~4 min
 uv run pytest -q tests/test_opds.py       # single file (seconds)
 uv run flask --app bookflow.app run --port 8000  # dev server (flask defaults to :5000)
 uv run alembic upgrade head               # apply migrations
 uv run alembic revision --autogenerate -m "..."
-uv run gunicorn --bind 0.0.0.0:8000 bookflow.app:app
+uv run gunicorn --bind 0.0.0.0:8000 bookflow.wsgi:app
 docker compose up -d --build          # containerized run (Dockerfile)
 # prebuilt image: docker pull ghcr.io/syfq91/bookflow:latest && docker compose up -d
 # publish image: Actions → "Publish Docker image to GHCR" (manual, workflow_dispatch)
@@ -54,7 +54,8 @@ pkill -f "[f]lask --app bookflow.app run"
 ## Code conventions
 
 - **Toolchain:** Python ≥3.14, uv, Flask 3, SQLAlchemy 2, Alembic, SQLite.
-  Ruff rules `E,F,I,UP,B`, line length 88, `target-version = "py314"`.
+  Ruff rules `E,F,I,UP,B,C4,SIM,RUF059` (`ARG` deliberately off — see
+  `pyproject.toml`), line length 88, `target-version = "py314"`.
 - **Style:** `from __future__ import annotations` at the top of every
   module; type-hint public functions; docstrings on modules/classes/public
   functions; inline comments are rare — prefer clear code over narration.
@@ -125,10 +126,11 @@ pkill -f "[f]lask --app bookflow.app run"
 
 - `optimizer/epubkit/` (package) shadows nothing now — do not recreate a
   sibling `optimizer/epubkit.py`; Python would silently prefer the package.
-- `tests/conftest.py` sets `OPDS_DATA_DIR` at import time so the
-  module-level `app = create_app()` never writes into the repo; don't
-  import `bookflow.app` in tests without the fixture chain (its engine
-  would leak — that's what `reset_engine()` is for).
+- An app is built only through `create_app()` (`build_app` in tests,
+  `bookflow.wsgi` in production) — never at import time, so no test can
+  write into the repo by importing the package. Don't build one outside
+  the fixture chain: its engine would leak (that's what `reset_engine()`
+  is for).
 - OPDS feeds paginate at 50; device feeds (`/opds/x3`, `/opds/x4`) list the
   whole library with EPUB acquisitions rewritten per profile and other
   formats falling back to `/opds/download/<id>` — keep that fallback when

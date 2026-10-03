@@ -12,13 +12,8 @@
 <section class="card">
   <h2>Components</h2>
   <dl class="detail">
-    {% for check in checks %}
-    <dt>{{ check.component }}</dt>
-    <dd>
-      <span class="badge badge-{{ check.status }}">{{ check.status|upper }}</span>
-      <span class="muted">{{ check.detail }}</span>
-    </dd>
-    {% endfor %}
+    {% set with_detail = true %}
+    {% include "_checks.html" %}
   </dl>
 </section>
 

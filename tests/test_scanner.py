@@ -199,6 +199,9 @@ def test_unavailable_folder_preserves_index(folder_id: int, root: Path) -> None:
     assert "unavailable" in folder.last_scan_error.lower()
 
 
+@pytest.mark.skipif(
+    os.geteuid() == 0, reason="root reads regardless of mode bits"
+)
 def test_unreadable_subdirectory_reports_partial(
     folder_id: int, root: Path
 ) -> None:

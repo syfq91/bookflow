@@ -1,0 +1,12 @@
+<nav class="browse-crumb" aria-label="Breadcrumb">
+  {% for label, crumb_path in crumbs %}
+  {% if loop.last %}
+  <span aria-current="page">{{ label }}</span>
+  {% else %}
+  <a href="{{ url_for(crumb_endpoint, path=crumb_path, **crumb_kwargs) }}"
+    >{{ label }}</a
+  >
+  <span class="browse-sep" aria-hidden="true">/</span>
+  {% endif %}
+  {% endfor %}
+</nav>

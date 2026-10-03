@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import threading
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
@@ -11,6 +12,7 @@ import pytest
 
 from bookflow.config import Settings
 from bookflow.library.service import add_folder
+from bookflow.optimizer.locks import progression_lock
 from factories import insert_books
 
 PASSWORD = "opds-pass"
@@ -391,3 +393,38 @@ def test_wrong_method_returns_problem(client, folder_id: int) -> None:
     document = json.loads(resp.data)
     assert document["type"] == "about:blank"
     assert document["title"]
+
+
+# --- concurrency ------------------------------------------------------------
+
+
+def test_progression_locks_are_per_book() -> None:
+    assert progression_lock(1) is progression_lock(1)
+    assert progression_lock(1) is not progression_lock(2)
+
+
+def test_progression_put_waits_for_book_lock(app, folder_id: int) -> None:
+    """The read→compare→write runs inside the book's lock, not beside it."""
+    book_id = _book_id(folder_id)
+    lock = progression_lock(book_id)
+    assert lock.acquire(blocking=False)
+
+    client = app.test_client()
+    finished = threading.Event()
+    statuses: list[int] = []
+
+    def worker() -> None:
+        try:
+            statuses.append(_put(client, book_id, _document()).status_code)
+        finally:
+            finished.set()
+
+    thread = threading.Thread(target=worker)
+    thread.start()
+    blocked = not finished.wait(timeout=0.5)
+    lock.release()
+    assert finished.wait(timeout=60)
+    thread.join(timeout=60)
+
+    assert blocked
+    assert statuses == [201]

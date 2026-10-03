@@ -36,4 +36,4 @@ RUN useradd --create-home --uid 1000 bookflow \
 USER bookflow
 EXPOSE 8000
 
-CMD ["sh", "-c", "alembic upgrade head && exec gunicorn --bind 0.0.0.0:8000 --workers \"${GUNICORN_WORKERS:-2}\" bookflow.app:app"]
+CMD ["sh", "-c", "alembic upgrade head && exec gunicorn --bind 0.0.0.0:8000 --workers \"${GUNICORN_WORKERS:-2}\" bookflow.wsgi:app"]

@@ -49,7 +49,7 @@ def optimize_book(book_id: int, profile: str, source: Path) -> Path:
             book_id, profile, cache_file, source_mtime, source_size
         ):
             return cache_file
-        _generate(source, cache_file, profile)
+        _generate(book_id, source, cache_file, profile)
         _record(book_id, profile, cache_file, source_mtime, source_size)
         return cache_file
 
@@ -211,7 +211,9 @@ def _cache_is_valid(
         )
 
 
-def _generate(source: Path, cache_file: Path, profile: str) -> None:
+def _generate(
+    book_id: int, source: Path, cache_file: Path, profile: str
+) -> None:
     cache_file.parent.mkdir(parents=True, exist_ok=True)
     tmp_dir = cache_file.parent / ".tmp"
     tmp_dir.mkdir(parents=True, exist_ok=True)
@@ -226,7 +228,9 @@ def _generate(source: Path, cache_file: Path, profile: str) -> None:
         )
         if not report.success:
             logger.warning(
-                "optimization failed for %s profile: %s",
+                "optimization failed for book_id=%d source=%s profile=%s: %s",
+                book_id,
+                source.name,
                 profile,
                 report.error or "unknown error",
             )
@@ -239,7 +243,12 @@ def _generate(source: Path, cache_file: Path, profile: str) -> None:
         raise
     except Exception as exc:
         tmp_file.unlink(missing_ok=True)
-        logger.warning("optimization failed for %s profile: %s", profile, exc)
+        logger.exception(
+            "optimization failed for book_id=%d source=%s profile=%s",
+            book_id,
+            source.name,
+            profile,
+        )
         raise OptimizationError("optimization failed") from exc
     finally:
         with _scratch_guard:

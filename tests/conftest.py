@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import tempfile
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -9,16 +10,26 @@ import pytest
 from alembic import command
 from flask import Flask
 
-# Ensure the module-level app in bookflow.app does not write into the repo
-# when the package is imported during collection.
-os.environ.setdefault("OPDS_DATA_DIR", tempfile.mkdtemp(prefix="bookflow-test-"))
-
 from bookflow.app import create_app
 from bookflow.config import Settings
 from bookflow.database.database import reset_engine
 from factories import alembic_config
 
 AppFactory = Callable[..., Flask]
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _default_data_dir() -> Iterator[Path]:
+    """Point default Settings at a scratch dir; never at the repo.
+
+    Nothing builds an app at import time any more, but any code that
+    falls back to ``Settings.from_env()`` must still stay out of the
+    working tree.
+    """
+    data_dir = Path(tempfile.mkdtemp(prefix="bookflow-test-"))
+    os.environ.setdefault("OPDS_DATA_DIR", str(data_dir))
+    yield data_dir
+    shutil.rmtree(data_dir, ignore_errors=True)
 
 
 @pytest.fixture
