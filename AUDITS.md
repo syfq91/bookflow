@@ -3,14 +3,14 @@
 **Target:** BookFlow (`src/bookflow`, `tests`, `migrations`, `compose.yml`, `Dockerfile`)  
 **Date:** October 3, 2026  
 **Auditor:** Antigravity Agent  
-**Test Suite Status:** 300 passed (100% passing)  
+**Test Suite Status:** 301 passed (100% passing)  
 **Linter Status:** Ruff passing (rules `E, F, I, UP, B, C4, SIM, RUF059`)  
 
 ---
 
 ## 1. Executive Summary
 
-BookFlow is an exceptionally well-engineered, focused, and clean application adhering closely to its core architectural invariants (read-only library filesystem, on-demand optimization, and single-user progression). The codebase exhibits high test coverage (300 comprehensive tests passing in under 3 minutes), clear separation of concerns across Flask blueprints, and zero unused CSS classes or dangling HTML templates.
+BookFlow is an exceptionally well-engineered, focused, and clean application adhering closely to its core architectural invariants (read-only library filesystem, on-demand optimization, and single-user progression). The codebase exhibits high test coverage (301 comprehensive tests passing in under 3 minutes), clear separation of concerns across Flask blueprints, and zero unused CSS classes or dangling HTML templates.
 
 However, a deep forensic analysis identified several areas requiring attention:
 1. **Dead Code & Write-Only State:** Specific metadata columns in SQLite ([`Book.language`](file:///home/syafiq/code/bookflow/src/bookflow/database/models.py#L67) and [`Book.series_index`](file:///home/syafiq/code/bookflow/src/bookflow/database/models.py#L71)) are extracted during folder scans and persisted into the database, but are never exposed in OPDS feeds, search filters, or admin templates. Additionally, certain test fixtures and result fields are unused.
@@ -28,9 +28,9 @@ However, a deep forensic analysis identified several areas requiring attention:
 | Column | Table | Extraction Source | Current Usage | Status |
 | :--- | :--- | :--- | :--- | :--- |
 | `language` | `books` | [`metadata.py:101-104`](file:///home/syafiq/code/bookflow/src/bookflow/library/metadata.py#L101-L104) | Saved via [`scanner.py:218`](file:///home/syafiq/code/bookflow/src/bookflow/library/scanner.py#L218); mapped in [`models.py:67`](file:///home/syafiq/code/bookflow/src/bookflow/database/models.py#L67). | **Dead / Write-Only.** Never queried in any route, never displayed in admin UI, not used in OPDS XML generation, and not included in catalog search. |
-| `series_index` | `books` | [`metadata.py:113-118`](file:///home/syafiq/code/bookflow/src/bookflow/library/metadata.py#L113-L118) | Saved via [`scanner.py:222`](file:///home/syafiq/code/bookflow/src/bookflow/library/scanner.py#L222); mapped in [`models.py:71`](file:///home/syafiq/code/bookflow/src/bookflow/database/models.py#L71). | **Dead / Write-Only.** While `Book.series` is used in search ([`opds/routes.py:751`](file:///home/syafiq/code/bookflow/src/bookflow/opds/routes.py#L751)), `series_index` is never read, formatted, or exposed anywhere. |
+| `series_index` | `books` | [`metadata.py:113-118`](file:///home/syafiq/code/bookflow/src/bookflow/library/metadata.py#L113-L118) | Saved via [`scanner.py:222`](file:///home/syafiq/code/bookflow/src/bookflow/library/scanner.py#L222); mapped in [`models.py:71`](file:///home/syafiq/code/bookflow/src/bookflow/database/models.py#L71). | **Dead / Write-Only.** While `Book.series` is used in search ([`opds/routes.py:757`](file:///home/syafiq/code/bookflow/src/bookflow/opds/routes.py#L757)), `series_index` is never read, formatted, or exposed anywhere. |
 
-*Note on other metadata:* Unlike Calibre, BookFlow deliberately maintains a minimal schema. While columns like `publisher` and `isbn` are not displayed in the UI, they are actively referenced in catalog search filters ([`_search_condition`](file:///home/syafiq/code/bookflow/src/bookflow/opds/routes.py#L744-L753)). In contrast, `language` and `series_index` incur XML parsing, memory, and database write overhead during every scan without ever being utilized.
+*Note on other metadata:* Unlike Calibre, BookFlow deliberately maintains a minimal schema. While columns like `publisher` and `isbn` are not displayed in the UI, they are actively referenced in catalog search filters ([`_search_condition`](file:///home/syafiq/code/bookflow/src/bookflow/opds/routes.py#L750-L759)). In contrast, `language` and `series_index` incur XML parsing, memory, and database write overhead during every scan without ever being utilized.
 
 *Recommendation:* Either expose `language` in OPDS `<entry><dcterms:language>` tags and `series_index` in book titles/summaries, or drop the unused columns in a future Alembic migration (mirroring revision [`0002_drop_unused_columns.py`](file:///home/syafiq/code/bookflow/migrations/versions/0002_drop_unused_columns.py)).
 
@@ -42,12 +42,11 @@ However, a deep forensic analysis identified several areas requiring attention:
 
 - **Unused `db` Fixture Parameter:** In [`tests/test_library.py`](file:///home/syafiq/code/bookflow/tests/test_library.py#L58-L167), the `db` fixture is defined as a non-autouse setup hook that applies Alembic migrations and initializes the database engine. Consequently, 12 individual test functions take `db` as a positional parameter without ever referencing it inside the test function body.
   *Recommendation:* Declare `@pytest.fixture(autouse=True)` in `test_library.py` (or apply `@pytest.mark.usefixtures("db")` at the module/class level) to eliminate 12 unused parameters.
-- **Stale Coverage Artifact:** The repository root contains a 52 KB binary `.coverage` file dated September 29, 2026. Running coverage tools against this file emits `No source for code: .../src/bookflow/library/models.py`, which was refactored to `src/bookflow/database/models.py`.
-  *Recommendation:* Add `.coverage` and `.coverage.*` to [`.gitignore`](file:///home/syafiq/code/bookflow/.gitignore) and delete the root `.coverage` file.
+- **Stale Coverage Artifact (resolved):** The 52 KB binary `.coverage` file in the repository root has been deleted, and `.coverage` is now listed in [`.gitignore`](file:///home/syafiq/code/bookflow/.gitignore) — no stale artifact can point coverage tools at the old `src/bookflow/library/models.py`.
 
 ### 2.4. Wildcard Route Arguments
 
-- In [`opds/progression.py:99`](file:///home/syafiq/code/bookflow/src/bookflow/opds/progression.py#L99) ([`unknown_publication_path`](file:///home/syafiq/code/bookflow/src/bookflow/opds/progression.py#L99)) and [`opds/routes.py:545`](file:///home/syafiq/code/bookflow/src/bookflow/opds/routes.py#L545) ([`unknown_path`](file:///home/syafiq/code/bookflow/src/bookflow/opds/routes.py#L545)):
+- In [`opds/progression.py:99`](file:///home/syafiq/code/bookflow/src/bookflow/opds/progression.py#L99) ([`unknown_publication_path`](file:///home/syafiq/code/bookflow/src/bookflow/opds/progression.py#L99)) and [`opds/routes.py:548`](file:///home/syafiq/code/bookflow/src/bookflow/opds/routes.py#L548) ([`unknown_path`](file:///home/syafiq/code/bookflow/src/bookflow/opds/routes.py#L548)):
   ```python
   @bp.get("/<path:unknown>")
   def unknown_publication_path(unknown: str) -> Never:
@@ -125,8 +124,8 @@ When running with 2 or more worker processes, in-memory state is isolated within
      WAL mode allows concurrent readers while a write transaction is executing.
 
 2. **Missing Indexes on Key Query Paths:**
-   - **`books.authors`:** Queried in [`opds/routes.py:378-384`](file:///home/syafiq/code/bookflow/src/bookflow/opds/routes.py#L378-L384) with `GROUP BY Book.authors ORDER BY lower(Book.authors)` and filtered in `_author_feed` with `Book.authors == author`. Without an index on `authors`, these queries perform full table scans on every author feed load.
-   - **`books.created_at`:** Queried in [`opds/routes.py:186`](file:///home/syafiq/code/bookflow/src/bookflow/opds/routes.py#L186) with `ORDER BY Book.created_at.desc(), Book.id.desc()` to populate the `/opds/recent` feed. Lacks an index.
+   - **`books.authors`:** Queried in [`opds/routes.py:382-388`](file:///home/syafiq/code/bookflow/src/bookflow/opds/routes.py#L382-L388) with `GROUP BY Book.authors ORDER BY lower(Book.authors)` and filtered in `_author_feed` with `Book.authors == author`. Without an index on `authors`, these queries perform full table scans on every author feed load.
+   - **`books.created_at`:** Queried in [`opds/routes.py:190`](file:///home/syafiq/code/bookflow/src/bookflow/opds/routes.py#L190) with `ORDER BY Book.created_at.desc(), Book.id.desc()` to populate the `/opds/recent` feed. Lacks an index.
    - **`books.title`:** Default ordering for all catalog feeds (`_title_order()`) uses `ORDER BY lower(coalesce(Book.title, Book.relative_path))`.
 
 ### 3.3. Convention Compliance with `AGENTS.md`
@@ -141,7 +140,6 @@ The codebase follows type hints rigorously (0 missing type annotations), but dev
    - [`src/bookflow/admin/__init__.py`](file:///home/syafiq/code/bookflow/src/bookflow/admin/__init__.py)
    - [`src/bookflow/auth/__init__.py`](file:///home/syafiq/code/bookflow/src/bookflow/auth/__init__.py)
    - [`src/bookflow/database/__init__.py`](file:///home/syafiq/code/bookflow/src/bookflow/database/__init__.py)
-   - [`src/bookflow/health/__init__.py`](file:///home/syafiq/code/bookflow/src/bookflow/health/__init__.py)
    - [`src/bookflow/library/__init__.py`](file:///home/syafiq/code/bookflow/src/bookflow/library/__init__.py)
    - [`src/bookflow/opds/__init__.py`](file:///home/syafiq/code/bookflow/src/bookflow/opds/__init__.py)
    - [`src/bookflow/optimizer/__init__.py`](file:///home/syafiq/code/bookflow/src/bookflow/optimizer/__init__.py)
@@ -172,12 +170,12 @@ The codebase follows type hints rigorously (0 missing type annotations), but dev
    - *Best Practice:* In `_prune` (or in a periodic cleanup), if `not failures` after pruning, remove the key from `self._failures` using `self._failures.pop(key, None)`.
 
 2. **Missing URL Decoding in EPUB Cover Extraction:**
-   In [`library/metadata.py:269-284`](file:///home/syafiq/code/bookflow/src/bookflow/library/metadata.py#L269-L284), `_zip_resolve(opf_path, href)` handles path segments and `..` traversal, but does not call `urllib.parse.unquote(clean)`.
+   In [`library/metadata.py:269-283`](file:///home/syafiq/code/bookflow/src/bookflow/library/metadata.py#L269-L283), `_zip_resolve(opf_path, href)` handles path segments and `..` traversal, but does not call `urllib.parse.unquote(clean)`.
    In valid EPUBs where the OPF manifest specifies percent-encoded hrefs (e.g. `<item href="images/cover%20art.jpg" .../>`), standard zip archives store the literal filename (`images/cover art.jpg`). Attempting `archive.read(target)` fails with `KeyError`, causing cover extraction to silently fail and return `None`.
    - *Best Practice:* Apply `urllib.parse.unquote` to `clean` before resolving zip segments.
 
 3. **HTTP Caching Headers on Cover Endpoint:**
-   [`opds/routes.py:513-525`](file:///home/syafiq/code/bookflow/src/bookflow/opds/routes.py#L513-L525) serves `/opds/cover/<int:book_id>` with:
+   [`opds/routes.py:517-529`](file:///home/syafiq/code/bookflow/src/bookflow/opds/routes.py#L517-L529) serves `/opds/cover/<int:book_id>` with:
    ```python
    headers={"Cache-Control": "public, max-age=3600"}
    ```
@@ -190,7 +188,7 @@ The codebase follows type hints rigorously (0 missing type annotations), but dev
    _add_link(entry, Link(THUMBNAIL_REL, cover))
    _add_link(entry, Link(IMAGE_REL, cover))
    ```
-   However, [`cover()`](file:///home/syafiq/code/bookflow/src/bookflow/opds/routes.py#L513-L517) immediately returns 404 if `target.suffix.lower() != ".epub"`. For PDF, CBZ, CBR, or MOBI books, readers attempting to fetch cover art will encounter broken image links and 404 responses.
+   However, [`cover()`](file:///home/syafiq/code/bookflow/src/bookflow/opds/routes.py#L517-L521) immediately returns 404 if `target.suffix.lower() != ".epub"`. For PDF, CBZ, CBR, or MOBI books, readers attempting to fetch cover art will encounter broken image links and 404 responses.
    - *Best Practice:* Only generate cover links if the book format supports cover extraction (or when cover extraction has verified cover availability).
 
 5. **Potential `FileNotFoundError` in Cache Clearance:**
