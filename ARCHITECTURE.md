@@ -113,7 +113,8 @@ bookflow/
 │   │
 │   ├── templates/                layout, login, dashboard, folders,
 │   │                             add_folder, browse_folders, library,
-│   │                             health
+│   │                             health, plus the shared partials
+│   │                             _checks/_breadcrumbs/_rows
 │   └── static/style.css
 │
 └── tests/                        300 tests (see §11)
@@ -145,7 +146,8 @@ epubkit integration is a package `optimizer/epubkit/` rather than a single
    - `password_verifier` — Argon2id hash of the configured password,
      built once at startup, used by both admin login and OPDS Basic Auth.
    - `login_rate_limiter` — in-memory failure counter per username.
-8. Jinja global `csrf_token` for form templates.
+8. Jinja globals `csrf_token` (form templates) and `is_admin` (the
+   signed-in nav in `layout.html`).
 9. Register four blueprints: `auth`, `admin`, `opds`, `progression`.
 10. `GET /` → `302` to `/admin/` (convenience redirect for the browser).
 11. `GET /healthz` → `{"status": "ok"}` (public liveness probe).
@@ -483,16 +485,17 @@ POST /admin/folders/<id>/scan (session + CSRF)
 **Concurrency.** One sync worker model (Flask dev server / gunicorn sync
 workers); SQLAlchemy sessions are per-`session_scope` and short-lived.
 Two in-process `threading.Lock` registries protect shared work:
-per-folder scan locks (`library/scanner.py`) and per-`(book_id, profile)`
-optimization locks (`optimizer/locks.py`); a waiting optimizer re-checks
-the cache after acquiring the lock. SQLite is configured for multiple
-threads (`check_same_thread=False` + WAL-free default journal).
+per-folder scan locks (`library/scanner.py`) and the per-book locks in
+`optimizer/locks.py` — per-`(book_id, profile)` for optimization (a
+waiting optimizer re-checks the cache after acquiring it) and per book
+for the progression PUT's read→compare→write. SQLite is configured for
+multiple threads (`check_same_thread=False` + WAL-free default journal).
 
 **Error handling by surface.**
 
 | Surface | Style |
 | ------- | ----- |
-| `/opds/*` | blueprint XML handler for every `HTTPException`, plus the app-level fallback in `create_app` for routing failures that never reach a blueprint |
+| `/opds/*` | blueprint XML handler for every `HTTPException`, plus the app-level fallback in `create_app` for routing failures that never reach a blueprint — the fallback authenticates first, so `404`/`405` behave like a routed request |
 | progression | RFC 7807 `application/problem+json` (registry `type` for 400/404/409, `about:blank` for everything else) |
 | `/admin/*` | Flask's default HTML error pages; forms show inline/flash messages |
 | auth failures | `401` + auth document (OPDS) or rendered login (admin) |

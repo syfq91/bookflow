@@ -35,7 +35,9 @@ Set `OPDS_ADMIN_PASSWORD` and open `/admin/login` (the site root `/`
 redirects to `/admin/`). Admin routes require a session; the OPDS routes
 use HTTP Basic Auth with the same credentials. Without
 `OPDS_ADMIN_PASSWORD` login attempts and the OPDS catalog return `503`
-(the login form itself still renders).
+(the login form itself still renders). A wrong username or password
+returns `401` with the login form and an inline error — `429` (rate
+limit) and `503` (unset password) are the only other failure codes.
 
 **Login rate limiting.** Five failed logins for the same client address
 and username inside ten minutes answer `429` until the window slides past
@@ -89,6 +91,12 @@ RFC 7807 problem documents instead (see below).
 A `401` returns the OPDS Authentication Document
 (`application/opds-authentication+json`), which is also served publicly at
 `/opds/authentication`.
+
+Authentication runs before anything else under `/opds`, so a request that
+fails routing — an unknown path (`404`) or a wrong method (`405`) — is
+`401` with the Authentication Document when the credentials are missing
+or wrong, and only then answers with its own error document. The same
+applies to `/opds/publications`. Nothing else under `/opds` is public.
 
 | Endpoint              | Contents                                              |
 | --------------------- | ----------------------------------------------------- |
