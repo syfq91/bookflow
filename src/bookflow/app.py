@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 
 from flask import Flask, Response, jsonify, redirect, request, session, url_for
 from werkzeug.exceptions import HTTPException
@@ -56,6 +57,7 @@ def create_app(settings: Settings | None = None) -> Flask:
     app = Flask(__name__)
     app.config["SETTINGS"] = settings
     app.config.update(
+        PERMANENT_SESSION_LIFETIME=timedelta(days=7),
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_COOKIE_SECURE=settings.session_cookie_secure,

@@ -17,7 +17,7 @@ than greenfield work.
 ```bash
 uv sync                                   # install deps
 uv run ruff check .                       # lint (gate before every commit)
-uv run pytest -q                          # full suite: 300 tests, ~4 min
+uv run pytest -q                          # full suite: 308 tests, ~1 min
 uv run pytest -q tests/test_opds.py       # single file (seconds)
 uv run flask --app bookflow.app run --port 8000  # dev server (flask defaults to :5000)
 uv run alembic upgrade head               # apply migrations

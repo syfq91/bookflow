@@ -117,7 +117,7 @@ bookflow/
 │   │                             _checks/_breadcrumbs/_rows
 │   └── static/style.css
 │
-└── tests/                        300 tests (see §11)
+└── tests/                        308 tests (see §11)
 ```
 
 Deliberate deviations from the originally sketched layout: every ORM model
@@ -193,17 +193,17 @@ the env value is Argon2id-hashed in memory at startup.
 - Schema changes go through Alembic (`migrations/versions/`); models are
   verified against migrations in `tests/test_database.py`.
 
-### Schema (migrations `0001`, `0002`)
+### Schema (migrations `0001`, `0002`, `0003`)
 
 ```text
 library_folders                     books
 ├── id (PK)                         ├── id (PK)
 ├── path (unique, 4096)             ├── folder_id (FK → library_folders, CASCADE)
 ├── name                             ├── relative_path (unique per folder)
-├── created_at, updated_at          ├── title, authors, publisher, language,
-└── last_scan_at/duration/…           isbn, description, series, series_index
+├── created_at, updated_at          ├── title, authors (index), publisher,
+└── last_scan_at/duration/…           isbn, description, series
                                     ├── file_format, file_size, file_modified_at
-progressions (1:1 with books)       └── created_at, updated_at
+progressions (1:1 with books)       └── created_at (index), updated_at
 ├── id (PK), book_id (UNIQUE, FK)
 ├── progression (float 0..1)        optimized_books
 ├── modified (datetime)             ├── id (PK)
@@ -277,8 +277,8 @@ directory itself is treated as rebuildable.
   - Never imports the optimizer.
 - `metadata.extract_metadata()` — dispatch on suffix:
   - EPUB: locate OPF via the container, parse with ElementTree: title,
-    creators, language, publisher, ISBN (normalized), description, series +
-    index; filename fallback when anything is missing or the file is
+    creators, publisher, ISBN (normalized), description, series;
+    filename fallback when anything is missing or the file is
     corrupt.
   - PDF: embedded `pypdf` document info, same fallback.
   - `extract_cover()` resolves the EPUB cover item to raw bytes — used
@@ -527,7 +527,7 @@ multiple threads (`check_same_thread=False` + WAL-free default journal).
 
 ## 11. Testing
 
-`tests/` (300 tests, `uv run pytest`):
+`tests/` (308 tests, `uv run pytest`):
 
 - `conftest.py` — temp `Settings` (fresh data dir + SQLite per test), the
   `build_app` factory (runs `alembic upgrade head` unless `migrate=False`,

@@ -62,20 +62,18 @@ class Book(Base):
     relative_path: Mapped[str] = mapped_column(String(4096), nullable=False)
 
     title: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    authors: Mapped[str | None] = mapped_column(Text, nullable=True)
+    authors: Mapped[str | None] = mapped_column(Text, nullable=True, index=True)
     publisher: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    language: Mapped[str | None] = mapped_column(String(32), nullable=True)
     isbn: Mapped[str | None] = mapped_column(String(32), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     series: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    series_index: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     file_format: Mapped[str | None] = mapped_column(String(16), nullable=True)
     file_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     file_modified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now()
+        DateTime, nullable=False, server_default=func.now(), index=True
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(), onupdate=func.now()

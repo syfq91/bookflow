@@ -241,11 +241,9 @@ def test_epub_metadata_fields(folder_id: int, root: Path) -> None:
 
     book = _books()[0]
     assert book.publisher == "Chilton"
-    assert book.language == "en"
     assert book.isbn == "9780441172719"
     assert book.description == "Epic sci-fi"
     assert book.series == "Dune"
-    assert book.series_index == 1.0
 
 
 def test_corrupt_epub_falls_back_to_filename(folder_id: int, root: Path) -> None:

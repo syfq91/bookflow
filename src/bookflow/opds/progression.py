@@ -9,6 +9,7 @@ from typing import Never
 
 from flask import Blueprint, Response, abort, request
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from werkzeug.exceptions import HTTPException
 
 from bookflow.database.database import session_scope
@@ -47,6 +48,7 @@ class _Document:
 
 @bp.get("/<int:book_id>/progression")
 def publication_progression(book_id: int) -> Response:
+    """Return the stored reading progression for a publication."""
     with session_scope() as session:
         if session.get(Book, book_id) is None:
             abort(404)
@@ -61,6 +63,7 @@ def publication_progression(book_id: int) -> Response:
 
 @bp.put("/<int:book_id>/progression")
 def update_publication_progression(book_id: int) -> Response:
+    """Save or update reading progression for a publication."""
     with progression_lock(book_id), session_scope() as session:
         if session.get(Book, book_id) is None:
             abort(404)
@@ -88,7 +91,27 @@ def update_publication_progression(book_id: int) -> Response:
         row.device_name = document.device_name
         row.title = document.title
         row.references = document.references
-        session.flush()
+        try:
+            session.flush()
+        except IntegrityError:
+            session.rollback()
+            row = session.scalar(
+                select(Progression).where(Progression.book_id == book_id)
+            )
+            if row is None:
+                raise
+            if row.modified is not None and document.modified < _as_aware(
+                row.modified
+            ):
+                abort(409)
+            created = False
+            row.progression = document.progression
+            row.modified = _as_naive(document.modified)
+            row.device_id = document.device_id
+            row.device_name = document.device_name
+            row.title = document.title
+            row.references = document.references
+            session.flush()
         body = json.dumps(_to_document(row))
     return Response(
         body, status=201 if created else 200, content_type=PROGRESSION_TYPE

@@ -327,3 +327,19 @@ def test_rate_limit_keys_on_forwarded_client_when_proxy_trusted(
     assert limiter.is_blocked(("203.0.113.7", "admin"))
     assert not limiter.is_blocked(("203.0.113.8", "admin"))
     assert not limiter.is_blocked(("127.0.0.1", "admin"))
+
+
+def test_rate_limiter_prunes_empty_keys() -> None:
+    now = 1000.0
+    limiter = LoginRateLimiter(window_seconds=60.0, clock=lambda: now)
+    key = ("127.0.0.1", "admin")
+
+    assert not limiter.is_blocked(key)
+    assert key not in limiter._failures
+
+    limiter.record_failure(key)
+    assert key in limiter._failures
+
+    now += 61.0
+    assert not limiter.is_blocked(key)
+    assert key not in limiter._failures

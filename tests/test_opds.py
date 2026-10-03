@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import zipfile
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
@@ -17,6 +18,7 @@ from bookflow.library.scanner import scan_folder
 from bookflow.library.service import add_folder
 from bookflow.opds import routes as opds_routes
 from factories import (
+    CONTAINER_XML,
     PNG_BYTES,
     entry_links,
     feed_entries,
@@ -72,8 +74,11 @@ def _headers(password: str = PASSWORD, username: str = "admin") -> dict[str, str
     return {"Authorization": f"Basic {token}"}
 
 
-def _get(client, path: str):
-    return client.get(path, headers=_headers())
+def _get(client, path: str, headers: dict[str, str] | None = None):
+    h = _headers()
+    if headers:
+        h.update(headers)
+    return client.get(path, headers=h)
 
 
 def _scan(folder_id: int):
@@ -522,6 +527,54 @@ def test_cover_serves_extracted_image(client, folder_id: int, root: Path) -> Non
 
     assert resp.status_code == 200
     assert resp.headers["Content-Type"] == "image/png"
+    assert resp.data == PNG_BYTES
+    etag = resp.headers.get("ETag")
+    assert etag is not None
+
+    reval = _get(client, f"/opds/cover/{book_id}", headers={"If-None-Match": etag})
+    assert reval.status_code == 304
+
+
+def test_pdf_entry_omits_cover_links(client, folder_id: int, root: Path) -> None:
+    make_pdf(root / "report.pdf", title="Report")
+    _scan(folder_id)
+    book_id = _book_ids()[0]
+
+    feed = parse_feed(_get(client, f"/opds/books/{book_id}"))
+    entry = feed_entries(feed)[0]
+    by_rel = links_by_rel(entry_links(entry))
+
+    assert THUMB_REL not in by_rel
+    assert IMAGE_REL not in by_rel
+
+
+def test_cover_with_percent_encoded_href(client, folder_id: int, root: Path) -> None:
+    path = root / "encoded.epub"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    opf = """<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>Encoded</dc:title>
+    <meta name="cover" content="cover-image"/>
+  </metadata>
+  <manifest>
+    <item id="c1" href="chapter.xhtml" media-type="application/xhtml+xml"/>
+    <item id="cover-image" href="cover%20image.png" media-type="image/png"/>
+  </manifest>
+  <spine><itemref idref="c1"/></spine>
+</package>
+"""
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("mimetype", "application/epub+zip")
+        archive.writestr("META-INF/container.xml", CONTAINER_XML)
+        archive.writestr("OEBPS/content.opf", opf)
+        archive.writestr("OEBPS/chapter.xhtml", "<html><body><p>Hi</p></body></html>")
+        archive.writestr("OEBPS/cover image.png", PNG_BYTES)
+
+    _scan(folder_id)
+    book_id = _book_ids()[-1]
+    resp = _get(client, f"/opds/cover/{book_id}")
+    assert resp.status_code == 200
     assert resp.data == PNG_BYTES
 
 

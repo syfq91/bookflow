@@ -74,6 +74,7 @@ FOLDER_SEGMENTS_LIMIT = 500
 @bp.get("/")
 @login_required
 def dashboard() -> str:
+    """Render the admin dashboard with component health and stats."""
     settings = current_app.config["SETTINGS"]
     return render_template(
         "dashboard.html",
@@ -85,12 +86,14 @@ def dashboard() -> str:
 @bp.get("/folders")
 @login_required
 def folders() -> str:
+    """Render the library folders management page."""
     return _folders_response()
 
 
 @bp.get("/folders/new")
 @login_required
 def folder_new() -> str:
+    """Render the form to register a new library folder."""
     return render_template(
         "add_folder.html", path=request.args.get("path", ""), error=None
     )
@@ -99,6 +102,7 @@ def folder_new() -> str:
 @bp.get("/folders/browse")
 @login_required
 def folder_browse() -> str | tuple[str, int]:
+    """Browse filesystem directories under browse_root."""
     settings = current_app.config["SETTINGS"]
     raw = request.args.get("path", "")
     result = browse_directory(raw, settings.browse_root)
@@ -116,6 +120,7 @@ def folder_browse() -> str | tuple[str, int]:
 @bp.post("/folders")
 @login_required
 def folder_create() -> str | Response | tuple[str, int]:
+    """Register and scan a new library folder."""
     raw = request.form.get("path", "")
     result = add_folder(raw)
     if not result.ok:
@@ -126,6 +131,7 @@ def folder_create() -> str | Response | tuple[str, int]:
 @bp.post("/folders/<int:folder_id>/scan")
 @login_required
 def folder_scan(folder_id: int) -> Response | tuple[str, int]:
+    """Trigger a rescan of an existing library folder."""
     folder = get_folder(folder_id)
     if folder is None:
         abort(404)
@@ -135,6 +141,7 @@ def folder_scan(folder_id: int) -> Response | tuple[str, int]:
 @bp.post("/folders/<int:folder_id>/delete")
 @login_required
 def folder_delete(folder_id: int) -> Response:
+    """Unregister a library folder and prune its cache."""
     folder = get_folder(folder_id)
     if folder is None:
         abort(404)
@@ -226,12 +233,14 @@ def library_tree(folder_id: int) -> str:
 @bp.get("/books/<int:book_id>/download")
 @login_required
 def book_download(book_id: int) -> Response:
+    """Download a book file directly from the admin panel."""
     return send_book_response(book_file(book_id))
 
 
 @bp.post("/cache/clear")
 @login_required
 def cache_clear() -> Response:
+    """Clear cached optimized books and their database rows."""
     files, rows = clear_optimized_cache()
     flash(
         f"Cleared optimization cache: {files} file(s) and {rows} index "
@@ -244,6 +253,7 @@ def cache_clear() -> Response:
 @bp.get("/health")
 @login_required
 def health() -> str:
+    """Render system health checks and library statistics."""
     settings = current_app.config["SETTINGS"]
     return render_template(
         "health.html",

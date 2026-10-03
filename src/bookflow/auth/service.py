@@ -79,7 +79,9 @@ class LoginRateLimiter:
         """Count a failed attempt against the key."""
         now = self._clock()
         with self._lock:
-            self._prune(key, now).append(now)
+            failures = self._prune(key, now)
+            failures.append(now)
+            self._failures[key] = failures
 
     def reset(self, key: tuple[str, str]) -> None:
         """Forget previous failures for the key (called after a success)."""
@@ -90,11 +92,12 @@ class LoginRateLimiter:
         """Return the key's in-window failures. Caller must hold the lock."""
         failures = self._failures.get(key)
         if failures is None:
-            failures = deque()
-            self._failures[key] = failures
+            return deque()
         cutoff = now - self._window_seconds
         while failures and failures[0] <= cutoff:
             failures.popleft()
+        if not failures:
+            self._failures.pop(key, None)
         return failures
 
 

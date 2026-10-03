@@ -1,3 +1,5 @@
+"""Health checks and library statistics service."""
+
 from __future__ import annotations
 
 from bookflow.health.service import (

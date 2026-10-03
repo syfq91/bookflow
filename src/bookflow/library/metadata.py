@@ -10,6 +10,7 @@ from __future__ import annotations
 import html
 import logging
 import re
+import urllib.parse
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -31,11 +32,9 @@ class BookMetadata:
     title: str | None = None
     authors: str | None = None
     publisher: str | None = None
-    language: str | None = None
     isbn: str | None = None
     description: str | None = None
     series: str | None = None
-    series_index: float | None = None
     file_format: str | None = None
 
 
@@ -98,10 +97,6 @@ def _apply_opf(root: ElementTree.Element, meta: BookMetadata) -> None:
     if publisher:
         meta.publisher = publisher
 
-    language = _first_text(root, "language")
-    if language:
-        meta.language = language
-
     description = _first_text(root, "description")
     if description:
         meta.description = _strip_html(description)
@@ -110,11 +105,9 @@ def _apply_opf(root: ElementTree.Element, meta: BookMetadata) -> None:
     if isbn:
         meta.isbn = isbn
 
-    series, series_index = _extract_series(root)
+    series = _extract_series(root)
     if series:
         meta.series = series
-    if series_index is not None:
-        meta.series_index = series_index
 
 
 def _extract_isbn(root: ElementTree.Element) -> str | None:
@@ -139,9 +132,8 @@ def _normalize_isbn(text: str) -> str | None:
     return None
 
 
-def _extract_series(root: ElementTree.Element) -> tuple[str | None, float | None]:
+def _extract_series(root: ElementTree.Element) -> str | None:
     series: str | None = None
-    series_index: float | None = None
     for element in root.iter():
         if not isinstance(element.tag, str) or _localname(element.tag) != "meta":
             continue
@@ -149,12 +141,7 @@ def _extract_series(root: ElementTree.Element) -> tuple[str | None, float | None
         content = (element.get("content") or "").strip()
         if name in ("calibre:series", "series"):
             series = content or None
-        elif name in ("calibre:series_index", "series_index") and content:
-            try:
-                series_index = float(content)
-            except ValueError:
-                series_index = None
-    return series, series_index
+    return series
 
 
 # --- PDF -------------------------------------------------------------------
@@ -269,6 +256,7 @@ def _cover_item(root: ElementTree.Element) -> tuple[str, str] | None:
 def _zip_resolve(opf_path: str, href: str) -> str | None:
     """Resolve ``href`` relative to the OPF inside the archive."""
     clean = href.split("#", 1)[0].split("?", 1)[0]
+    clean = urllib.parse.unquote(clean)
     if not clean:
         return None
     parts: list[str] = []

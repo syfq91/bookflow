@@ -6,11 +6,13 @@ import logging
 import os
 import shutil
 import threading
+import time
 import uuid
 from pathlib import Path
 
 from flask import current_app
 from sqlalchemy import delete, select
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from bookflow.config import Settings
 from bookflow.database.database import session_scope
@@ -21,6 +23,7 @@ from bookflow.optimizer.locks import profile_lock
 logger = logging.getLogger(__name__)
 
 PROFILES = ("x3", "x4")
+SCRATCH_EXPIRY_SECONDS = 900
 
 _scratch_guard = threading.Lock()
 _scratch_running: set[Path] = set()
@@ -79,7 +82,7 @@ def clear_optimized_cache() -> tuple[int, int]:
                 continue
             with profile_lock(book_id, profile):
                 if entry.is_file():
-                    entry.unlink()
+                    entry.unlink(missing_ok=True)
                     files += 1
     with session_scope() as session:
         rows = int(session.execute(delete(OptimizedBook)).rowcount or 0)
@@ -163,12 +166,20 @@ def _sweep_scratch(directory: Path) -> int:
 
     The ``.tmp`` directory itself stays: a generation creates it and then
     claims its file, so removing it would race that window.
+    Files modified within ``SCRATCH_EXPIRY_SECONDS`` are preserved to spare
+    in-flight generations running on other workers.
     """
+    now = time.time()
     removed = 0
     for entry in sorted(directory.iterdir()):
         with _scratch_guard:
             if entry in _scratch_running:
                 continue
+        try:
+            if now - entry.stat().st_mtime < SCRATCH_EXPIRY_SECONDS:
+                continue
+        except OSError:
+            continue
         if entry.is_dir():
             shutil.rmtree(entry, ignore_errors=True)
         else:
@@ -262,16 +273,24 @@ def _record(
     source_mtime: int,
     source_size: int,
 ) -> None:
-    with session_scope() as session:
-        row = session.scalar(
-            select(OptimizedBook).where(
-                OptimizedBook.book_id == book_id,
-                OptimizedBook.profile == profile,
-            )
+    optimized_size = cache_file.stat().st_size
+    stmt = (
+        sqlite_insert(OptimizedBook)
+        .values(
+            book_id=book_id,
+            profile=profile,
+            source_mtime=source_mtime,
+            source_size=source_size,
+            optimized_size=optimized_size,
         )
-        if row is None:
-            row = OptimizedBook(book_id=book_id, profile=profile)
-            session.add(row)
-        row.source_mtime = source_mtime
-        row.source_size = source_size
-        row.optimized_size = cache_file.stat().st_size
+        .on_conflict_do_update(
+            index_elements=["book_id", "profile"],
+            set_={
+                "source_mtime": source_mtime,
+                "source_size": source_size,
+                "optimized_size": optimized_size,
+            },
+        )
+    )
+    with session_scope() as session:
+        session.execute(stmt)

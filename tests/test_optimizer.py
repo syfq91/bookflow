@@ -4,6 +4,7 @@ import base64
 import io
 import os
 import threading
+import time
 import zipfile
 from dataclasses import replace
 from pathlib import Path
@@ -433,6 +434,8 @@ def test_cache_clear_sweeps_stale_scratch(client, app, folder_id, root) -> None:
     stale = settings.x3_cache_dir / ".tmp" / "leftover.epub"
     stale.parent.mkdir(parents=True, exist_ok=True)
     stale.write_bytes(b"stale")
+    old_time = time.time() - 1000
+    os.utime(stale, (old_time, old_time))
 
     login_admin(client, password=PASSWORD)
     resp = _clear_cache(client)
@@ -442,6 +445,19 @@ def test_cache_clear_sweeps_stale_scratch(client, app, folder_id, root) -> None:
     # The scratch directory itself stays: removing it would race the
     # window between a generation creating it and claiming its file.
     assert stale.parent.is_dir()
+
+
+def test_cache_clear_spares_recent_scratch(client, app, folder_id, root) -> None:
+    settings = app.config["SETTINGS"]
+    recent = settings.x3_cache_dir / ".tmp" / "in_flight.epub"
+    recent.parent.mkdir(parents=True, exist_ok=True)
+    recent.write_bytes(b"recent-scratch")
+
+    login_admin(client, password=PASSWORD)
+    resp = _clear_cache(client)
+
+    assert resp.status_code == 302
+    assert recent.is_file()
 
 
 def test_cache_clear_spares_in_flight_scratch(
@@ -540,3 +556,25 @@ def test_folder_delete_prunes_cache_files(
     assert not cache_file.exists()
     assert _optimized_rows(book_id) == []
     assert source.exists()
+
+
+def test_record_upsert_updates_existing_row(app, folder_id, root) -> None:
+    book_id, _source = _library_book(root, folder_id)
+    cache_file = app.config["SETTINGS"].x3_cache_dir / f"{book_id}.epub"
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    cache_file.write_bytes(b"optimized-content")
+
+    with app.app_context():
+        optimizer_service._record(book_id, "x3", cache_file, 100, 200)
+        optimizer_service._record(book_id, "x3", cache_file, 150, 250)
+
+    with app.app_context(), session_scope() as session:
+        row = session.scalar(
+            select(OptimizedBook).where(
+                OptimizedBook.book_id == book_id,
+                OptimizedBook.profile == "x3",
+            )
+        )
+        assert row is not None
+        assert row.source_mtime == 150
+        assert row.source_size == 250

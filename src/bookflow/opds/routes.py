@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -477,16 +478,19 @@ def _search_feed(profile: str | None) -> Response:
 
 @bp.get("/opds/books/<int:book_id>")
 def book_feed(book_id: int) -> Response:
+    """Return an OPDS feed containing a single book entry."""
     return _book_feed(book_id, None)
 
 
 @bp.get("/opdsx3/books/<int:book_id>")
 def x3_book_feed(book_id: int) -> Response:
+    """Return an OPDS feed for a single book with X3 optimized acquisition."""
     return _book_feed(book_id, "x3")
 
 
 @bp.get("/opdsx4/books/<int:book_id>")
 def x4_book_feed(book_id: int) -> Response:
+    """Return an OPDS feed for a single book with X4 optimized acquisition."""
     return _book_feed(book_id, "x4")
 
 
@@ -510,11 +514,13 @@ def _book_feed(book_id: int, profile: str | None) -> Response:
 
 @bp.get("/opds/download/<int:book_id>")
 def download(book_id: int) -> Response:
+    """Download the original ebook file."""
     return send_book_response(book_file(book_id))
 
 
 @bp.get("/opds/cover/<int:book_id>")
 def cover(book_id: int) -> Response:
+    """Serve the extracted cover image for an EPUB."""
     target = book_file(book_id)
     if target.suffix.lower() != ".epub":
         abort(404)
@@ -522,10 +528,20 @@ def cover(book_id: int) -> Response:
     if extracted is None:
         abort(404)
     data, media_type = extracted
+    digest = hashlib.sha256(data).hexdigest()
+    etag = f'"{digest}"'
+    if request.if_none_match and (
+        request.if_none_match.contains(digest)
+        or request.if_none_match.contains_raw(etag)
+    ):
+        return Response(
+            status=304,
+            headers={"ETag": etag, "Cache-Control": "public, max-age=3600"},
+        )
     return Response(
         data,
         content_type=media_type,
-        headers={"Cache-Control": "public, max-age=3600"},
+        headers={"Cache-Control": "public, max-age=3600", "ETag": etag},
     )
 
 
@@ -534,11 +550,13 @@ def cover(book_id: int) -> Response:
 
 @bp.get("/opdsx3/download/<int:book_id>")
 def x3_download(book_id: int) -> Response:
+    """Download the book optimized for the X3 profile."""
     return _optimized_download(book_id, "x3")
 
 
 @bp.get("/opdsx4/download/<int:book_id>")
 def x4_download(book_id: int) -> Response:
+    """Download the book optimized for the X4 profile."""
     return _optimized_download(book_id, "x4")
 
 
@@ -549,6 +567,7 @@ def x4_download(book_id: int) -> Response:
 @bp.get("/opdsx3/<path:unknown>")
 @bp.get("/opdsx4/<path:unknown>")
 def unknown_path(unknown: str) -> Never:
+    """Fallback handler returning a 404 OPDS XML error for unknown paths."""
     abort(404)
 
 

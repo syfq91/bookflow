@@ -60,3 +60,24 @@ def test_create_app_makes_info_records_reach_handlers(
         "INFO reaches the handlers" in record.getMessage()
         for record in caplog.records
     )
+
+
+def test_permanent_session_lifetime(app) -> None:
+    from datetime import timedelta
+
+    assert app.permanent_session_lifetime == timedelta(days=7)
+
+
+def test_sqlite_pragmas_enabled(app) -> None:
+    from sqlalchemy import text
+
+    from bookflow.database.database import session_scope
+
+    with session_scope() as session:
+        journal_mode = session.execute(text("PRAGMA journal_mode")).scalar()
+        busy_timeout = session.execute(text("PRAGMA busy_timeout")).scalar()
+        foreign_keys = session.execute(text("PRAGMA foreign_keys")).scalar()
+
+    assert str(journal_mode).lower() == "wal"
+    assert busy_timeout == 5000
+    assert foreign_keys == 1

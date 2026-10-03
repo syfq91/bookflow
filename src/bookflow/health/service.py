@@ -32,12 +32,16 @@ class HealthCheck:
 
 
 class FormatStats(TypedDict):
+    """Book count and total byte size for a specific file format."""
+
     format: str
     books: int
     size: int
 
 
 class FolderStats(TypedDict):
+    """Book count and total byte size for a registered library folder."""
+
     name: str
     path: str
     books: int
@@ -45,27 +49,37 @@ class FolderStats(TypedDict):
 
 
 class CacheProfile(TypedDict):
+    """Cached book count and total byte size for an optimization profile."""
+
     books: int
     size: int
 
 
 class ProgressionStats(TypedDict):
+    """Total books with recorded reading progression and active device identifiers."""
+
     books: int
     devices: list[str]
 
 
 class LastSuccess(TypedDict):
+    """Metadata describing the last successful scan across registered folders."""
+
     folder: str
     at: datetime | None
     duration: float | None
 
 
 class ScanError(TypedDict):
+    """Error encountered during folder scanning."""
+
     folder: str
     message: str
 
 
 class ScannerStats(TypedDict):
+    """Overall scanner state including last successful run and recent errors."""
+
     last_success: LastSuccess | None
     errors: list[ScanError]
 

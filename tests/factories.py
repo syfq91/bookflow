@@ -179,7 +179,6 @@ def insert_books(folder_id: int, specs: list[dict]) -> list[int]:
                 "title": spec.get("title"),
                 "authors": spec.get("authors"),
                 "publisher": spec.get("publisher"),
-                "language": spec.get("language"),
                 "isbn": spec.get("isbn"),
                 "description": spec.get("description"),
                 "series": spec.get("series"),

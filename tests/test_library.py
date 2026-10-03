@@ -28,7 +28,7 @@ ADMIN_PASSWORD = "library-pass"
 EXTENSIONS = (".epub", ".pdf", ".cbz", ".cbr", ".mobi", ".azw3")
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def db(settings: Settings):
     reset_engine()
     command.upgrade(alembic_config(settings.database_url), "head")
@@ -55,7 +55,7 @@ def app(build_app, auth_settings: Settings):
 # --- folder service --------------------------------------------------------
 
 
-def test_add_folder_registers(db, tmp_path: Path) -> None:
+def test_add_folder_registers(tmp_path: Path) -> None:
     target = tmp_path / "library"
     target.mkdir()
 
@@ -69,28 +69,28 @@ def test_add_folder_registers(db, tmp_path: Path) -> None:
         assert folder.last_scan_at is None
 
 
-def test_add_folder_rejects_empty(db) -> None:
+def test_add_folder_rejects_empty() -> None:
     result = add_folder("   ")
 
     assert not result.ok
     assert "Enter a folder path" in (result.error or "")
 
 
-def test_add_folder_rejects_relative_path(db) -> None:
+def test_add_folder_rejects_relative_path() -> None:
     result = add_folder("books")
 
     assert not result.ok
     assert "absolute" in (result.error or "")
 
 
-def test_add_folder_rejects_missing_path(db, tmp_path: Path) -> None:
+def test_add_folder_rejects_missing_path(tmp_path: Path) -> None:
     result = add_folder(str(tmp_path / "nope"))
 
     assert not result.ok
     assert "does not exist" in (result.error or "")
 
 
-def test_add_folder_rejects_file(db, tmp_path: Path) -> None:
+def test_add_folder_rejects_file(tmp_path: Path) -> None:
     target = tmp_path / "file.txt"
     target.write_text("not a folder")
 
@@ -100,7 +100,7 @@ def test_add_folder_rejects_file(db, tmp_path: Path) -> None:
     assert "not a directory" in (result.error or "")
 
 
-def test_add_folder_rejects_duplicate(db, root: Path) -> None:
+def test_add_folder_rejects_duplicate(root: Path) -> None:
     assert add_folder(str(root)).ok
 
     again = add_folder(str(root) + os.sep)
@@ -109,7 +109,7 @@ def test_add_folder_rejects_duplicate(db, root: Path) -> None:
     assert "already registered" in (again.error or "")
 
 
-def test_add_folder_rejects_nested_child(db, tmp_path: Path) -> None:
+def test_add_folder_rejects_nested_child(tmp_path: Path) -> None:
     parent = tmp_path / "books"
     (parent / "child").mkdir(parents=True)
     assert add_folder(str(parent)).ok
@@ -120,7 +120,7 @@ def test_add_folder_rejects_nested_child(db, tmp_path: Path) -> None:
     assert "inside registered folder" in (nested.error or "")
 
 
-def test_add_folder_rejects_nested_parent(db, tmp_path: Path) -> None:
+def test_add_folder_rejects_nested_parent(tmp_path: Path) -> None:
     child = tmp_path / "books" / "child"
     child.mkdir(parents=True)
     assert add_folder(str(child)).ok
@@ -131,7 +131,7 @@ def test_add_folder_rejects_nested_parent(db, tmp_path: Path) -> None:
     assert "is inside this path" in (parent.error or "")
 
 
-def test_remove_folder_deletes_index_but_not_files(db, root: Path) -> None:
+def test_remove_folder_deletes_index_but_not_files(root: Path) -> None:
     make_epub(root / "dune.epub", title="Dune")
     result = add_folder(str(root))
     assert result.folder_id is not None
@@ -145,11 +145,11 @@ def test_remove_folder_deletes_index_but_not_files(db, root: Path) -> None:
     assert (root / "dune.epub").exists()
 
 
-def test_remove_unknown_folder(db) -> None:
+def test_remove_unknown_folder() -> None:
     assert remove_folder(4242) is False
 
 
-def test_list_folders_reports_stats(db, root: Path) -> None:
+def test_list_folders_reports_stats(root: Path) -> None:
     make_epub(root / "dune.epub", title="Dune")
     result = add_folder(str(root))
     assert result.folder_id is not None
@@ -164,7 +164,7 @@ def test_list_folders_reports_stats(db, root: Path) -> None:
     assert folders[0]["last_scan_error"] is None
 
 
-def test_get_folder_matches_the_list_entry(db, root: Path) -> None:
+def test_get_folder_matches_the_list_entry(root: Path) -> None:
     make_epub(root / "dune.epub", title="Dune")
     result = add_folder(str(root))
     assert result.folder_id is not None

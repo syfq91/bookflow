@@ -133,9 +133,10 @@ def book_entry(book: Book, profile: str | None = None) -> ElementTree.Element:
             title="Download",
         ),
     )
-    cover = url_for("opds.cover", book_id=book.id)
-    _add_link(entry, Link(THUMBNAIL_REL, cover))
-    _add_link(entry, Link(IMAGE_REL, cover))
+    if book.relative_path.lower().endswith(".epub"):
+        cover = url_for("opds.cover", book_id=book.id)
+        _add_link(entry, Link(THUMBNAIL_REL, cover))
+        _add_link(entry, Link(IMAGE_REL, cover))
     _add_link(
         entry,
         Link(

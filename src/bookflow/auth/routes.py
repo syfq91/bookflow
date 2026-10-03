@@ -27,6 +27,7 @@ bp.before_request(require_csrf)
 
 @bp.get("/admin/login")
 def login() -> str | Response:
+    """Render the admin login form."""
     if session.get(ADMIN_SESSION_KEY):
         return redirect(url_for("admin.dashboard"))
     return render_template("login.html", next_target=request.args.get("next", ""))
@@ -34,6 +35,7 @@ def login() -> str | Response:
 
 @bp.post("/admin/login")
 def login_post() -> str | Response | tuple[str, int]:
+    """Authenticate admin credentials and establish a session."""
     limiter = current_app.extensions["login_rate_limiter"]
     verifier = current_app.extensions["password_verifier"]
     username = request.form.get("username", "")
@@ -83,5 +85,6 @@ def login_post() -> str | Response | tuple[str, int]:
 
 @bp.post("/admin/logout")
 def logout() -> Response:
+    """Clear admin session and redirect to the login form."""
     session.clear()
     return redirect(url_for("auth.login"))

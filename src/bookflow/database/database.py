@@ -15,13 +15,15 @@ _engine: Engine | None = None
 _session_factory: sessionmaker[Session] | None = None
 
 
-def _enable_sqlite_foreign_keys(
+def _configure_sqlite_pragmas(
     dbapi_connection: Any, _connection_record: Any
 ) -> None:
-    """Enforce ON DELETE CASCADE declared in the schema."""
+    """Enforce ON DELETE CASCADE and enable WAL mode with a busy timeout."""
     cursor = dbapi_connection.cursor()
     try:
         cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=5000")
     finally:
         cursor.close()
 
@@ -33,7 +35,7 @@ def get_engine(settings: Settings) -> Engine:
         connect_args["check_same_thread"] = False
     engine = create_engine(settings.database_url, connect_args=connect_args)
     if engine.dialect.name == "sqlite":
-        event.listen(engine, "connect", _enable_sqlite_foreign_keys)
+        event.listen(engine, "connect", _configure_sqlite_pragmas)
     return engine
 
 
