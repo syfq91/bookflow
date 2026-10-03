@@ -127,11 +127,18 @@ def test_root_feed_links_device_catalogs(client, folder_id) -> None:
         for link in feed_links(feed)
         if link.get("rel") == SUBSECTION_REL
     }
-    assert "/opds/x3" in hrefs
-    assert "/opds/x4" in hrefs
-    assert hrefs["/opds/x3"].get("type") == NAV
-    assert hrefs["/opds/x3"].get("title") == "X3 Catalog"
-    assert hrefs["/opds/x4"].get("title") == "X4 Catalog"
+    assert "/opdsx3" in hrefs
+    assert "/opdsx4" in hrefs
+    assert hrefs["/opdsx3"].get("type") == NAV
+    assert hrefs["/opdsx3"].get("title") == "X3 Catalog"
+    assert hrefs["/opdsx4"].get("title") == "X4 Catalog"
+
+
+def test_device_catalogs_are_not_nested_under_opds(client) -> None:
+    resp = _get(client, "/opds/x3")
+
+    assert resp.status_code == 404
+    assert resp.headers["Content-Type"] == "application/xml"
 
 
 # --- device feeds -----------------------------------------------------------
@@ -141,7 +148,7 @@ def test_root_feed_links_device_catalogs(client, folder_id) -> None:
 def test_device_root_is_folder_view(client, folder_id, profile) -> None:
     original = parse_feed(_get(client, "/opds"))
 
-    resp = _get(client, f"/opds/{profile}")
+    resp = _get(client, f"/opds{profile}")
 
     assert resp.headers["Content-Type"] == NAV
     feed = parse_feed(resp)
@@ -149,12 +156,12 @@ def test_device_root_is_folder_view(client, folder_id, profile) -> None:
         f"BookFlow — {profile.upper()} Catalog"
     )
     assert _section_titles(feed) == {
-        "books": f"/opds/{profile}/folders/{folder_id}",
+        "books": f"/opds{profile}/folders/{folder_id}",
     }
     assert _section_titles(original) == {
         "books": f"/opds/folders/{folder_id}",
-        "X3 Catalog": "/opds/x3",
-        "X4 Catalog": "/opds/x4",
+        "X3 Catalog": "/opdsx3",
+        "X4 Catalog": "/opdsx4",
     }
     for section in _section_titles(feed):
         assert section in _section_titles(original)
@@ -177,7 +184,7 @@ def test_device_feed_lists_books_with_profile_links(
     epub_id = _book_id("Dune")
     pdf_id = _book_id("Quarterly Report")
 
-    resp = _get(client, f"/opds/{profile}/books")
+    resp = _get(client, f"/opds{profile}/books")
 
     assert resp.headers["Content-Type"] == ACQ
     feed = parse_feed(resp)
@@ -191,7 +198,7 @@ def test_device_feed_lists_books_with_profile_links(
         for entry in feed_entries(feed)
     }
     epub_link = links_by_rel(entry_links(entries["Dune"]))[ACQUISITION_REL][0]
-    assert epub_link.get("href") == f"/opds/{profile}/download/{epub_id}"
+    assert epub_link.get("href") == f"/opds{profile}/download/{epub_id}"
     assert epub_link.get("type") == "application/epub+zip"
 
     pdf_link = links_by_rel(entry_links(entries["Quarterly Report"]))[
@@ -204,14 +211,14 @@ def test_device_feed_lists_books_with_profile_links(
 @pytest.mark.parametrize("profile", ["x3", "x4"])
 def test_device_feed_requires_auth(client, profile) -> None:
     for path in (
-        f"/opds/{profile}",
-        f"/opds/{profile}/books",
-        f"/opds/{profile}/recent",
-        f"/opds/{profile}/authors",
-        f"/opds/{profile}/authors/Sol%20Brothers",
-        f"/opds/{profile}/search?q=x",
-        f"/opds/{profile}/folders",
-        f"/opds/{profile}/folders/1",
+        f"/opds{profile}",
+        f"/opds{profile}/books",
+        f"/opds{profile}/recent",
+        f"/opds{profile}/authors",
+        f"/opds{profile}/authors/Sol%20Brothers",
+        f"/opds{profile}/search?q=x",
+        f"/opds{profile}/folders",
+        f"/opds{profile}/folders/1",
     ):
         assert client.get(path).status_code == 401, path
 
@@ -220,16 +227,16 @@ def test_device_feed_requires_auth(client, profile) -> None:
 def test_device_feed_paginates(client, folder_id, profile) -> None:
     _insert_books(folder_id, 51)
 
-    first = parse_feed(_get(client, f"/opds/{profile}/books"))
+    first = parse_feed(_get(client, f"/opds{profile}/books"))
     assert len(feed_entries(first)) == 50
     next_links = [
         link
         for link in feed_links(first)
         if link.get("rel") == "next"
     ]
-    assert next_links[0].get("href") == f"/opds/{profile}/books?page=2"
+    assert next_links[0].get("href") == f"/opds{profile}/books?page=2"
 
-    second = parse_feed(_get(client, f"/opds/{profile}/books?page=2"))
+    second = parse_feed(_get(client, f"/opds{profile}/books?page=2"))
     assert feed_titles(second) == ["Book 050"]
 
 
@@ -240,7 +247,7 @@ def test_device_recent_uses_profile_downloads(
     _mixed_library(root, folder_id)
     epub_id = _book_id("Dune")
 
-    feed = parse_feed(_get(client, f"/opds/{profile}/recent"))
+    feed = parse_feed(_get(client, f"/opds{profile}/recent"))
 
     assert feed.findtext("a:title", namespaces=NS) == (
         f"BookFlow — {profile.upper()} — Recent"
@@ -251,7 +258,7 @@ def test_device_recent_uses_profile_downloads(
     }
     assert set(entries) == {"Dune", "Quarterly Report"}
     acquisition = links_by_rel(entry_links(entries["Dune"]))[ACQUISITION_REL][0]
-    assert acquisition.get("href") == f"/opds/{profile}/download/{epub_id}"
+    assert acquisition.get("href") == f"/opds{profile}/download/{epub_id}"
 
 
 @pytest.mark.parametrize("profile", ["x3", "x4"])
@@ -261,20 +268,20 @@ def test_device_authors_index_and_feed_use_profile_downloads(
     _mixed_library(root, folder_id)
     epub_id = _book_id("Dune")
 
-    index = parse_feed(_get(client, f"/opds/{profile}/authors"))
+    index = parse_feed(_get(client, f"/opds{profile}/authors"))
 
     assert index.findtext("a:title", namespaces=NS) == (
         f"BookFlow — {profile.upper()} — Authors"
     )
     assert feed_titles(index) == ["Frank Herbert"]
     author_link = links_by_rel(entry_links(feed_entries(index)[0]))[SUBSECTION_REL][0]
-    assert author_link.get("href").startswith(f"/opds/{profile}/authors/")
+    assert author_link.get("href").startswith(f"/opds{profile}/authors/")
 
     feed = parse_feed(_get(client, author_link.get("href")))
 
     assert feed_titles(feed) == ["Dune"]
     acquisition = links_by_rel(entry_links(feed_entries(feed)[0]))[ACQUISITION_REL][0]
-    assert acquisition.get("href") == f"/opds/{profile}/download/{epub_id}"
+    assert acquisition.get("href") == f"/opds{profile}/download/{epub_id}"
 
 
 @pytest.mark.parametrize("profile", ["x3", "x4"])
@@ -284,14 +291,14 @@ def test_device_search_uses_profile_downloads(
     _mixed_library(root, folder_id)
     epub_id = _book_id("Dune")
 
-    feed = parse_feed(_get(client, f"/opds/{profile}/search?q=Dune"))
+    feed = parse_feed(_get(client, f"/opds{profile}/search?q=Dune"))
 
     assert feed.findtext("a:title", namespaces=NS) == (
         f"BookFlow — {profile.upper()} — Search: Dune"
     )
     assert feed_titles(feed) == ["Dune"]
     acquisition = links_by_rel(entry_links(feed_entries(feed)[0]))[ACQUISITION_REL][0]
-    assert acquisition.get("href") == f"/opds/{profile}/download/{epub_id}"
+    assert acquisition.get("href") == f"/opds{profile}/download/{epub_id}"
 
 
 # --- device book feeds ------------------------------------------------------
@@ -304,7 +311,7 @@ def test_device_book_feed_links_to_optimized_download(
     _mixed_library(root, folder_id)
     book_id = _book_id("Dune")
 
-    feed = parse_feed(_get(client, f"/opds/{profile}/books/{book_id}"))
+    feed = parse_feed(_get(client, f"/opds{profile}/books/{book_id}"))
 
     assert feed.findtext("a:title", namespaces=NS) == (
         f"BookFlow — {profile.upper()} — Dune"
@@ -312,7 +319,7 @@ def test_device_book_feed_links_to_optimized_download(
     entry = feed_entries(feed)[0]
     links = links_by_rel(entry_links(entry))
     acquisition = links[ACQUISITION_REL][0]
-    assert acquisition.get("href") == f"/opds/{profile}/download/{book_id}"
+    assert acquisition.get("href") == f"/opds{profile}/download/{book_id}"
     assert acquisition.get("type") == "application/epub+zip"
     assert links["http://opds-spec.org/progression"][0].get("href") == (
         f"/opds/publications/{book_id}/progression"
@@ -327,7 +334,7 @@ def test_device_book_feed_falls_back_to_original_for_pdf(
     _mixed_library(root, folder_id)
     book_id = _book_id("Quarterly Report")
 
-    feed = parse_feed(_get(client, f"/opds/{profile}/books/{book_id}"))
+    feed = parse_feed(_get(client, f"/opds{profile}/books/{book_id}"))
 
     acquisition = links_by_rel(entry_links(feed_entries(feed)[0]))[ACQUISITION_REL][0]
     assert acquisition.get("href") == f"/opds/download/{book_id}"
@@ -337,7 +344,7 @@ def test_device_book_feed_falls_back_to_original_for_pdf(
 def test_device_book_feed_unknown_book_returns_xml_404(
     client, folder_id
 ) -> None:
-    resp = _get(client, "/opds/x3/books/999999")
+    resp = _get(client, "/opdsx3/books/999999")
 
     assert resp.status_code == 404
     assert resp.headers["Content-Type"] == "application/xml"
@@ -350,7 +357,7 @@ def test_epub_acquisition_link_from_device_feed_resolves(
     client, folder_id, root
 ) -> None:
     _mixed_library(root, folder_id)
-    feed = parse_feed(_get(client, "/opds/x3/books"))
+    feed = parse_feed(_get(client, "/opdsx3/books"))
     epub_entry = feed_entries(feed)[0]
     href = links_by_rel(entry_links(epub_entry))[ACQUISITION_REL][0].get("href")
 
@@ -364,7 +371,7 @@ def test_pdf_acquisition_link_from_device_feed_resolves(
     client, folder_id, root
 ) -> None:
     _mixed_library(root, folder_id)
-    feed = parse_feed(_get(client, "/opds/x4/books"))
+    feed = parse_feed(_get(client, "/opdsx4/books"))
     pdf_entry = feed_entries(feed)[1]
     href = links_by_rel(entry_links(pdf_entry))[ACQUISITION_REL][0].get("href")
 

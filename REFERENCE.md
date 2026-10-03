@@ -92,11 +92,12 @@ A `401` returns the OPDS Authentication Document
 (`application/opds-authentication+json`), which is also served publicly at
 `/opds/authentication`.
 
-Authentication runs before anything else under `/opds`, so a request that
-fails routing — an unknown path (`404`) or a wrong method (`405`) — is
-`401` with the Authentication Document when the credentials are missing
-or wrong, and only then answers with its own error document. The same
-applies to `/opds/publications`. Nothing else under `/opds` is public.
+Authentication runs before anything else under the catalog prefixes
+(`/opds`, `/opdsx3`, `/opdsx4`), so a request that fails routing — an
+unknown path (`404`) or a wrong method (`405`) — is `401` with the
+Authentication Document when the credentials are missing or wrong, and
+only then answers with its own error document. The same applies to
+`/opds/publications`. Nothing else under those prefixes is public.
 
 | Endpoint              | Contents                                              |
 | --------------------- | ----------------------------------------------------- |
@@ -111,19 +112,19 @@ applies to `/opds/publications`. Nothing else under `/opds` is public.
 | `/opds/books/<id>`    | Feed for a single book                                |
 | `/opds/download/<id>` | The book file itself (attachment)                     |
 | `/opds/cover/<id>`    | Cover image extracted from the EPUB on demand (`404` when absent) |
-| `/opds/x3`            | X3 catalog root: the folder view with X3-optimized acquisitions, plus Search |
-| `/opds/x3/books?page=N`, `/opds/x3/recent?page=N` | Flat feeds of the X3 catalog, EPUBs via the X3 download |
-| `/opds/x3/authors`, `/opds/x3/authors/<name>`, `/opds/x3/search?q=…` | Author index, author feed and search for the X3 catalog |
-| `/opds/x3/books/<id>` | Single-book feed in the X3 catalog                    |
-| `/opds/x3/download/<id>` | EPUB optimized for the Xteink X3 (on demand, cached) |
-| `/opds/x3/folders`, `/opds/x3/folders/<id>?path=…` | The folder hierarchy with X3-optimized EPUB acquisitions |
-| `/opds/x4`            | X4 catalog root: same as `/opds/x3`                  |
-| `/opds/x4/books`, `/opds/x4/recent`, `/opds/x4/authors`, `/opds/x4/search`, `/opds/x4/folders`, `/opds/x4/folders/<id>?path=…` | The X3 URLs above with X4 acquisitions |
-| `/opds/x4/books/<id>` | Single-book feed in the X4 catalog                    |
-| `/opds/x4/download/<id>` | EPUB optimized for the Xteink X4 (on demand, cached) |
+| `/opdsx3`            | X3 catalog root: the folder view with X3-optimized acquisitions, plus Search |
+| `/opdsx3/books?page=N`, `/opdsx3/recent?page=N` | Flat feeds of the X3 catalog, EPUBs via the X3 download |
+| `/opdsx3/authors`, `/opdsx3/authors/<name>`, `/opdsx3/search?q=…` | Author index, author feed and search for the X3 catalog |
+| `/opdsx3/books/<id>` | Single-book feed in the X3 catalog                    |
+| `/opdsx3/download/<id>` | EPUB optimized for the Xteink X3 (on demand, cached) |
+| `/opdsx3/folders`, `/opdsx3/folders/<id>?path=…` | The folder hierarchy with X3-optimized EPUB acquisitions |
+| `/opdsx4`            | X4 catalog root: same as `/opdsx3`                  |
+| `/opdsx4/books`, `/opdsx4/recent`, `/opdsx4/authors`, `/opdsx4/search`, `/opdsx4/folders`, `/opdsx4/folders/<id>?path=…` | The X3 URLs above with X4 acquisitions |
+| `/opdsx4/books/<id>` | Single-book feed in the X4 catalog                    |
+| `/opdsx4/download/<id>` | EPUB optimized for the Xteink X4 (on demand, cached) |
 | `/opds/publications/<id>/progression` | Reading position per OPDS Progression 1.0: `GET` reads, `PUT` updates (`application/opds-progression+json`); conflicts are `409` problem details — full client docs below |
 
-The roots (`/opds`, `/opds/x3`, `/opds/x4`) all open straight into the folder
+The roots (`/opds`, `/opdsx3`, `/opdsx4`) all open straight into the folder
 view, so a client pointed at any of them browses the same tree. The flat
 feeds (`/opds/books`, `/opds/recent`, `/opds/authors`, `/opds/folders` and
 their X3/X4 mirrors) still exist but are no longer linked from the roots —

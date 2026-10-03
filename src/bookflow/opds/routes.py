@@ -42,7 +42,11 @@ from bookflow.opds.generator import (
 )
 from bookflow.optimizer.service import OptimizationError, optimize_book
 
-bp = Blueprint("opds", __name__, url_prefix="/opds")
+bp = Blueprint("opds", __name__)
+
+# One blueprint serves the original catalog and both device catalogs, so
+# every rule carries its full path instead of a shared url_prefix.
+OPDS_URL_PREFIXES = ("/opds", "/opdsx3", "/opdsx4")
 
 bp.before_request(partial(require_basic_auth, skip="opds.authentication"))
 
@@ -55,7 +59,7 @@ PATH_MAX_LENGTH = 1024
 # --- discovery --------------------------------------------------------------
 
 
-@bp.get("/authentication")
+@bp.get("/opds/authentication")
 def authentication() -> Response:
     """Serve the OPDS Authentication Document (public, per specification)."""
     return Response(
@@ -63,20 +67,20 @@ def authentication() -> Response:
     )
 
 
-@bp.get("/")
-@bp.get("")
+@bp.get("/opds/")
+@bp.get("/opds")
 def root_feed() -> Response:
     """Root navigation feed of the original catalog (the folder view)."""
     return _catalog_root(None)
 
 
-@bp.get("/x3")
+@bp.get("/opdsx3")
 def x3_feed() -> Response:
     """Root navigation feed of the X3 catalog (the folder view)."""
     return _catalog_root("x3")
 
 
-@bp.get("/x4")
+@bp.get("/opdsx4")
 def x4_feed() -> Response:
     """Root navigation feed of the X4 catalog (the folder view)."""
     return _catalog_root("x4")
@@ -134,19 +138,19 @@ def _catalog_root(profile: str | None) -> Response:
     return Response(data, content_type=NAVIGATION_TYPE)
 
 
-@bp.get("/books")
+@bp.get("/opds/books")
 def books_feed() -> Response:
     """All books of the original catalog, A→Z."""
     return _books_feed(None)
 
 
-@bp.get("/x3/books")
+@bp.get("/opdsx3/books")
 def x3_books_feed() -> Response:
     """All books with X3-optimized EPUB acquisitions."""
     return _books_feed("x3")
 
 
-@bp.get("/x4/books")
+@bp.get("/opdsx4/books")
 def x4_books_feed() -> Response:
     """All books with X4-optimized EPUB acquisitions."""
     return _books_feed("x4")
@@ -162,19 +166,19 @@ def _books_feed(profile: str | None) -> Response:
     )
 
 
-@bp.get("/recent")
+@bp.get("/opds/recent")
 def recent_feed() -> Response:
     """Books of the original catalog, newest first."""
     return _recent_feed(None)
 
 
-@bp.get("/x3/recent")
+@bp.get("/opdsx3/recent")
 def x3_recent_feed() -> Response:
     """Newest books with X3-optimized EPUB acquisitions."""
     return _recent_feed("x3")
 
 
-@bp.get("/x4/recent")
+@bp.get("/opdsx4/recent")
 def x4_recent_feed() -> Response:
     """Newest books with X4-optimized EPUB acquisitions."""
     return _recent_feed("x4")
@@ -193,37 +197,37 @@ def _recent_feed(profile: str | None) -> Response:
 # --- folders ----------------------------------------------------------------
 
 
-@bp.get("/folders")
+@bp.get("/opds/folders")
 def folders_feed() -> Response:
     """Navigation feed listing every registered library folder."""
     return _folders_index(None)
 
 
-@bp.get("/folders/<int:folder_id>")
+@bp.get("/opds/folders/<int:folder_id>")
 def folder_feed(folder_id: int) -> Response:
     """One directory level of a registered folder: subfolders and books."""
     return _folder_level(folder_id, None)
 
 
-@bp.get("/x3/folders")
+@bp.get("/opdsx3/folders")
 def x3_folders_feed() -> Response:
     """Navigation feed listing folders for the X3 catalog."""
     return _folders_index("x3")
 
 
-@bp.get("/x3/folders/<int:folder_id>")
+@bp.get("/opdsx3/folders/<int:folder_id>")
 def x3_folder_feed(folder_id: int) -> Response:
     """One directory level, with X3-optimized EPUB acquisitions."""
     return _folder_level(folder_id, "x3")
 
 
-@bp.get("/x4/folders")
+@bp.get("/opdsx4/folders")
 def x4_folders_feed() -> Response:
     """Navigation feed listing folders for the X4 catalog."""
     return _folders_index("x4")
 
 
-@bp.get("/x4/folders/<int:folder_id>")
+@bp.get("/opdsx4/folders/<int:folder_id>")
 def x4_folder_feed(folder_id: int) -> Response:
     """One directory level, with X4-optimized EPUB acquisitions."""
     return _folder_level(folder_id, "x4")
@@ -353,19 +357,19 @@ def _folder_level(folder_id: int, profile: str | None) -> Response:
 # --- authors ----------------------------------------------------------------
 
 
-@bp.get("/authors")
+@bp.get("/opds/authors")
 def authors_feed() -> Response:
     """Author index of the original catalog."""
     return _authors_feed(None)
 
 
-@bp.get("/x3/authors")
+@bp.get("/opdsx3/authors")
 def x3_authors_feed() -> Response:
     """Author index for the X3 catalog."""
     return _authors_feed("x3")
 
 
-@bp.get("/x4/authors")
+@bp.get("/opdsx4/authors")
 def x4_authors_feed() -> Response:
     """Author index for the X4 catalog."""
     return _authors_feed("x4")
@@ -401,19 +405,19 @@ def _authors_feed(profile: str | None) -> Response:
     return Response(data, content_type=NAVIGATION_TYPE)
 
 
-@bp.get("/authors/<path:author>")
+@bp.get("/opds/authors/<path:author>")
 def author_feed(author: str) -> Response:
     """Books by one author, original catalog."""
     return _author_feed(None, author)
 
 
-@bp.get("/x3/authors/<path:author>")
+@bp.get("/opdsx3/authors/<path:author>")
 def x3_author_feed(author: str) -> Response:
     """Books by one author with X3-optimized EPUB acquisitions."""
     return _author_feed("x3", author)
 
 
-@bp.get("/x4/authors/<path:author>")
+@bp.get("/opdsx4/authors/<path:author>")
 def x4_author_feed(author: str) -> Response:
     """Books by one author with X4-optimized EPUB acquisitions."""
     return _author_feed("x4", author)
@@ -433,19 +437,19 @@ def _author_feed(profile: str | None, author: str) -> Response:
 # --- search -----------------------------------------------------------------
 
 
-@bp.get("/search")
+@bp.get("/opds/search")
 def search_feed() -> Response:
     """Search the original catalog."""
     return _search_feed(None)
 
 
-@bp.get("/x3/search")
+@bp.get("/opdsx3/search")
 def x3_search_feed() -> Response:
     """Search with X3-optimized EPUB acquisitions."""
     return _search_feed("x3")
 
 
-@bp.get("/x4/search")
+@bp.get("/opdsx4/search")
 def x4_search_feed() -> Response:
     """Search with X4-optimized EPUB acquisitions."""
     return _search_feed("x4")
@@ -471,17 +475,17 @@ def _search_feed(profile: str | None) -> Response:
 # --- single book ------------------------------------------------------------
 
 
-@bp.get("/books/<int:book_id>")
+@bp.get("/opds/books/<int:book_id>")
 def book_feed(book_id: int) -> Response:
     return _book_feed(book_id, None)
 
 
-@bp.get("/x3/books/<int:book_id>")
+@bp.get("/opdsx3/books/<int:book_id>")
 def x3_book_feed(book_id: int) -> Response:
     return _book_feed(book_id, "x3")
 
 
-@bp.get("/x4/books/<int:book_id>")
+@bp.get("/opdsx4/books/<int:book_id>")
 def x4_book_feed(book_id: int) -> Response:
     return _book_feed(book_id, "x4")
 
@@ -504,12 +508,12 @@ def _book_feed(book_id: int, profile: str | None) -> Response:
     return Response(data, content_type=ACQUISITION_TYPE)
 
 
-@bp.get("/download/<int:book_id>")
+@bp.get("/opds/download/<int:book_id>")
 def download(book_id: int) -> Response:
     return send_book_response(book_file(book_id))
 
 
-@bp.get("/cover/<int:book_id>")
+@bp.get("/opds/cover/<int:book_id>")
 def cover(book_id: int) -> Response:
     target = book_file(book_id)
     if target.suffix.lower() != ".epub":
@@ -528,12 +532,12 @@ def cover(book_id: int) -> Response:
 # --- optimized acquisition --------------------------------------------------
 
 
-@bp.get("/x3/download/<int:book_id>")
+@bp.get("/opdsx3/download/<int:book_id>")
 def x3_download(book_id: int) -> Response:
     return _optimized_download(book_id, "x3")
 
 
-@bp.get("/x4/download/<int:book_id>")
+@bp.get("/opdsx4/download/<int:book_id>")
 def x4_download(book_id: int) -> Response:
     return _optimized_download(book_id, "x4")
 
@@ -541,14 +545,16 @@ def x4_download(book_id: int) -> Response:
 # --- errors -----------------------------------------------------------------
 
 
-@bp.get("/<path:unknown>")
+@bp.get("/opds/<path:unknown>")
+@bp.get("/opdsx3/<path:unknown>")
+@bp.get("/opdsx4/<path:unknown>")
 def unknown_path(unknown: str) -> Never:
     abort(404)
 
 
 @bp.errorhandler(HTTPException)
 def error_document(error: HTTPException) -> Response:
-    """Build the XML error document for a failure under ``/opds``.
+    """Build the XML error document for a failure under ``OPDS_URL_PREFIXES``.
 
     Registering ``HTTPException`` instead of a fixed code list keeps rare
     statuses (405, 414, 416, …) from falling through to Werkzeug's HTML

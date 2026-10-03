@@ -16,8 +16,8 @@ from bookflow.database.database import init_engine
 from bookflow.opds.auth import require_basic_auth
 from bookflow.opds.progression import bp as progression_bp
 from bookflow.opds.progression import problem_document
+from bookflow.opds.routes import OPDS_URL_PREFIXES, error_document
 from bookflow.opds.routes import bp as opds_bp
-from bookflow.opds.routes import error_document
 
 
 def _is_admin() -> bool:
@@ -111,16 +111,18 @@ def create_app(settings: Settings | None = None) -> Flask:
         Flask's default HTML error page.
         """
         path = request.path
-        for prefix, document in (
-            (progression_bp.url_prefix, problem_document),
-            (opds_bp.url_prefix, error_document),
+        if progression_bp.url_prefix and path.startswith(
+            progression_bp.url_prefix
         ):
-            if prefix and path.startswith(prefix):
-                if path != url_for("opds.authentication"):
-                    denied = require_basic_auth(skip="opds.authentication")
-                    if denied is not None:
-                        return denied
-                return document(error)
-        return error
+            document = problem_document
+        elif any(path.startswith(prefix) for prefix in OPDS_URL_PREFIXES):
+            document = error_document
+        else:
+            return error
+        if path != url_for("opds.authentication"):
+            denied = require_basic_auth(skip="opds.authentication")
+            if denied is not None:
+                return denied
+        return document(error)
 
     return app

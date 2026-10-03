@@ -130,8 +130,8 @@ def test_root_feed_lists_registered_folders(
 def test_folders_index_requires_auth(client) -> None:
     assert client.get("/opds/folders").status_code == 401
     assert client.get("/opds/folders/1").status_code == 401
-    assert client.get("/opds/x3/folders").status_code == 401
-    assert client.get("/opds/x4/folders/1").status_code == 401
+    assert client.get("/opdsx3/folders").status_code == 401
+    assert client.get("/opdsx4/folders/1").status_code == 401
 
 
 def test_folders_index_lists_registered_folders(client, tmp_path: Path) -> None:
@@ -336,17 +336,17 @@ def test_folders_are_isolated_between_registered_folders(
 def test_device_catalog_lists_registered_folders(
     client, folder_id: int, profile
 ) -> None:
-    feed = parse_feed(_get(client, f"/opds/{profile}"))
+    feed = parse_feed(_get(client, f"/opds{profile}"))
 
     by_rel = links_by_rel(feed_links(feed))
     folders = [
         link
         for link in by_rel[SUBSECTION_REL]
-        if link.get("href") == f"/opds/{profile}/folders/{folder_id}"
+        if link.get("href") == f"/opds{profile}/folders/{folder_id}"
     ]
     assert len(folders) == 1
     assert folders[0].get("title") == "books"
-    assert _nav_items(feed)["books"] == f"/opds/{profile}/folders/{folder_id}"
+    assert _nav_items(feed)["books"] == f"/opds{profile}/folders/{folder_id}"
 
 
 @pytest.mark.parametrize("profile", ["x3", "x4"])
@@ -355,14 +355,14 @@ def test_device_folders_index_lists_folders(
 ) -> None:
     folder = _register(tmp_path, "alpha")
 
-    feed = parse_feed(_get(client, f"/opds/{profile}/folders"))
+    feed = parse_feed(_get(client, f"/opds{profile}/folders"))
 
     assert feed.findtext("a:title", namespaces=NS) == (
         f"BookFlow — {profile.upper()} — Folders"
     )
     by_rel = links_by_rel(feed_links(feed))
     assert by_rel[SUBSECTION_REL][0].get("href") == (
-        f"/opds/{profile}/folders/{folder}"
+        f"/opds{profile}/folders/{folder}"
     )
 
 
@@ -375,7 +375,7 @@ def test_device_folder_level_uses_profile_downloads(
     _scan(folder_id)
 
     feed = parse_feed(
-        _get(client, f"/opds/{profile}/folders/{folder_id}?path=series")
+        _get(client, f"/opds{profile}/folders/{folder_id}?path=series")
     )
 
     assert feed.findtext("a:title", namespaces=NS) == (
@@ -388,7 +388,7 @@ def test_device_folder_level_uses_profile_downloads(
     }
     epub_link = links_by_rel(entry_links(entries["Dune"]))[ACQUISITION_REL][0]
     assert epub_link.get("href") == (
-        f"/opds/{profile}/download/{_book_id('Dune')}"
+        f"/opds{profile}/download/{_book_id('Dune')}"
     )
     pdf_link = links_by_rel(entry_links(entries["Report"]))[ACQUISITION_REL][0]
     assert pdf_link.get("href") == f"/opds/download/{_book_id('Report')}"

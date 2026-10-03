@@ -74,7 +74,7 @@ CMD ["sh", "-c", "alembic upgrade head && exec gunicorn --bind 0.0.0.0:8000 --wo
 When running with 2 or more worker processes, in-memory state is isolated within each operating system process. This introduces several critical edge cases:
 
 1. **Simultaneous Optimization Race on Cache Miss:**
-   When two requests for the same book and profile (`/opds/x3/download/<id>`) hit Worker 1 and Worker 2 concurrently:
+   When two requests for the same book and profile (`/opdsx3/download/<id>`) hit Worker 1 and Worker 2 concurrently:
    - Both workers check [`_cache_is_valid()`](file:///home/syafiq/code/bookflow/src/bookflow/optimizer/service.py#L188) (both get `False`).
    - Both workers independently execute `epubkit` optimization into `.tmp/<uuid>.epub`.
    - Both workers execute `os.replace(tmp_file, cache_file)`. (Safe on POSIX).

@@ -94,7 +94,7 @@ pkill -f "[f]lask --app bookflow.app run"
    anything under a registered folder. All writes go to SQLite and
    `data/cache/`.
 2. **Optimization is on-demand only.** epubkit runs exclusively inside
-   `optimize_book()`, reached only from `/opds/x3|/x4/download/<id>`.
+   `optimize_book()`, reached only from `/opdsx3|/opdsx4/download/<id>`.
    Never call it from scanning, startup, routes, or background tasks.
 3. **Paths come from the DB, not the URL.** `book_file()` in
    `library/paths.py` is the single source of book paths and enforces
@@ -131,7 +131,7 @@ pkill -f "[f]lask --app bookflow.app run"
   write into the repo by importing the package. Don't build one outside
   the fixture chain: its engine would leak (that's what `reset_engine()`
   is for).
-- OPDS feeds paginate at 50; device feeds (`/opds/x3`, `/opds/x4`) list the
+- OPDS feeds paginate at 50; device feeds (`/opdsx3`, `/opdsx4`) list the
   whole library with EPUB acquisitions rewritten per profile and other
   formats falling back to `/opds/download/<id>` — keep that fallback when
   adding formats.

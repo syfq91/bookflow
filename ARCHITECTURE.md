@@ -39,11 +39,11 @@ Three rules define the system:
    stored as `(folder.path, relative_path)`, never absolute paths, and the
    library is never written to, renamed, or deleted.
 2. **Optimization is strictly on-demand.** Only a request to
-   `/opds/x3/download/<id>` or `/opds/x4/download/<id>` may invoke the
+   `/opdsx3/download/<id>` or `/opdsx4/download/<id>` may invoke the
    epubkit pipeline — never scanning, startup, or background jobs.
 3. **Single user, single surface.** One admin (session cookie for `/admin`,
-   HTTP Basic for `/opds`), one progression per book regardless of which
-   download URL the reader used.
+   HTTP Basic for `/opds`, `/opdsx3` and `/opdsx4`), one progression per
+   book regardless of which download URL the reader used.
 
 ## 2. Technology
 
@@ -287,9 +287,13 @@ directory itself is treated as rebuildable.
 ### 7.3 `opds/` — the catalog
 
 - `routes.py` — all catalog endpoints (table in §8). Shared helpers:
+  - one blueprint serves all three catalog prefixes, so every rule carries
+    its full path instead of a shared `url_prefix`;
+    `OPDS_URL_PREFIXES` (`/opds`, `/opdsx3`, `/opdsx4`) is the list the
+    app-level error fallback matches on;
   - `before_request` registers `require_basic_auth()` (from `auth.py`,
     shared with `progression.py`) with `skip="opds.authentication"`, so
-    HTTP Basic covers everything under `/opds` except the public
+    HTTP Basic covers everything under those prefixes except the public
     authentication document;
   - book paths come from `library.paths.book_file()` (§7.2) — the **only**
     function that turns a book row into a path, so URL input can never
@@ -300,7 +304,8 @@ directory itself is treated as rebuildable.
     Flask's HTML error pages. Routing failures never reach a blueprint
     (there is no matched URL rule, so `request.blueprints` is empty);
     `create_app` registers an app-level handler that answers those under
-    `/opds` with the same documents and leaves everything else alone;
+    `OPDS_URL_PREFIXES` with the same documents and leaves everything
+    else alone;
   - every acquisition feed is built in two steps — `_book_page()` fetches
     one page (total, `updated` stamp, rows) and `_acquisition_response()`
     renders it — so counts, `self`/`rel="next"` links and the response
@@ -309,7 +314,8 @@ directory itself is treated as rebuildable.
 - `generator.py` — pure builders over ElementTree: `navigation_feed()`,
   `acquisition_feed()`, `book_entry()`. Each entry carries acquisition,
   thumbnail/image, and progression links. With a device `profile`,
-  `_acquisition()` points EPUBs at `/opds/{x3,x4}/download/<id>` and lets
+  `_acquisition()` points EPUBs at `/opdsx3/download/<id>` or
+  `/opdsx4/download/<id>` and lets
   other formats fall back to the original download so no link is broken.
 - `auth.py` — `authenticate()` verifies the Basic header against the shared
   `PasswordVerifier`, and `require_basic_auth()` is the `before_request`
@@ -430,11 +436,12 @@ All `/admin/*` (except login) require the session cookie.
 | `/opds/authors`, `/opds/authors/<name>` | grouped navigation + author feed |
 | `/opds/folders`, `/opds/folders/<id>?path=` | folder hierarchy: registered folders → one directory level (subfolders + books), derived from `relative_path`, never from the filesystem |
 | `/opds/books/<id>`, `/opds/download/<id>`, `/opds/cover/<id>` | single book, original file, extracted cover |
-| `/opds/x3`, `/opds/x3/books`, `/opds/x3/recent`, `/opds/x3/authors`, `/opds/x3/search?q=`, `/opds/x3/folders`, `/opds/x3/folders/<id>`, `/opds/x3/books/<id>`, `/opds/x3/download/<id>` | X3 catalog — root is the folder view, same as `/opds` (same for `x4`) |
+| `/opdsx3`, `/opdsx3/books`, `/opdsx3/recent`, `/opdsx3/authors`, `/opdsx3/search?q=`, `/opdsx3/folders`, `/opdsx3/folders/<id>`, `/opdsx3/books/<id>`, `/opdsx3/download/<id>` | X3 catalog — root is the folder view, same as `/opds`; `/opdsx4` mirrors every path with X4 acquisitions |
 | `/opds/authentication` | public OPDS Authentication Document |
 | `/opds/publications/<id>/progression` | `GET`/`PUT`, `application/opds-progression+json` |
 
-Unknown `/opds/*` paths return XML `404` (catch-all rule), never HTML.
+Unknown paths under `/opds`, `/opdsx3` or `/opdsx4` return XML `404`
+(catch-all rule), never HTML.
 
 ## 9. Representative request flows
 
@@ -450,7 +457,7 @@ GET /opds/books  →  before_request: Basic auth (401 → auth document)
 ### Optimized download (the only path into epubkit)
 
 ```text
-GET /opds/x4/download/12
+GET /opdsx4/download/12
   → auth → book_file(12)             (DB lookup + root-resolve guard)
   → suffix must be .epub             (else 404)
   → optimize_book(12, "x4", src)
@@ -495,7 +502,7 @@ multiple threads (`check_same_thread=False` + WAL-free default journal).
 
 | Surface | Style |
 | ------- | ----- |
-| `/opds/*` | blueprint XML handler for every `HTTPException`, plus the app-level fallback in `create_app` for routing failures that never reach a blueprint — the fallback authenticates first, so `404`/`405` behave like a routed request |
+| `/opds`, `/opdsx3`, `/opdsx4` | blueprint XML handler for every `HTTPException`, plus the app-level fallback in `create_app` for routing failures that never reach a blueprint — the fallback authenticates first, so `404`/`405` behave like a routed request |
 | progression | RFC 7807 `application/problem+json` (registry `type` for 400/404/409, `about:blank` for everything else) |
 | `/admin/*` | Flask's default HTML error pages; forms show inline/flash messages |
 | auth failures | `401` + auth document (OPDS) or rendered login (admin) |

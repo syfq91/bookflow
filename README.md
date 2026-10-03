@@ -67,7 +67,7 @@ bare metal both default to `8000`). Authenticate with the admin
 credentials. The root feed opens straight into the folder tree (`/opds/folders`,
 mirroring the directory layout) with search from every root; the flat feeds
 (`/opds/books`, `/opds/recent`, authors) remain reachable by URL. The X3/X4
-device catalogs (`/opds/x3`, `/opds/x4`) open the same folder tree — only
+device catalogs (`/opdsx3`, `/opdsx4`) open the same folder tree — only
 their EPUB downloads are optimized on demand and cached; other formats fall
 back to the original file. Reading positions sync via OPDS Progression
 (`/opds/publications/<id>/progression`) — the

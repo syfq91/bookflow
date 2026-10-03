@@ -104,7 +104,7 @@ def _clear_cache(client):
 def test_x3_download_returns_optimized_epub(client, folder_id, root) -> None:
     book_id, _source = _library_book(root, folder_id)
 
-    resp = _get(client, f"/opds/x3/download/{book_id}")
+    resp = _get(client, f"/opdsx3/download/{book_id}")
 
     assert resp.status_code == 200
     assert resp.headers["Content-Type"] == EPUB_TYPE
@@ -116,7 +116,7 @@ def test_x3_download_returns_optimized_epub(client, folder_id, root) -> None:
 def test_x4_download_returns_optimized_epub(client, folder_id, root) -> None:
     book_id, _source = _library_book(root, folder_id)
 
-    resp = _get(client, f"/opds/x4/download/{book_id}")
+    resp = _get(client, f"/opdsx4/download/{book_id}")
 
     assert resp.status_code == 200
     assert resp.headers["Content-Type"] == EPUB_TYPE
@@ -129,7 +129,7 @@ def test_download_populates_cache_and_index(
 ) -> None:
     book_id, source = _library_book(root, folder_id)
 
-    resp = _get(client, f"/opds/x4/download/{book_id}")
+    resp = _get(client, f"/opdsx4/download/{book_id}")
 
     assert resp.status_code == 200
     cache_file = app.config["SETTINGS"].x4_cache_dir / f"{book_id}.epub"
@@ -148,8 +148,8 @@ def test_profiles_use_separate_cache_entries(
 ) -> None:
     book_id, _source = _library_book(root, folder_id)
 
-    assert _get(client, f"/opds/x3/download/{book_id}").status_code == 200
-    assert _get(client, f"/opds/x4/download/{book_id}").status_code == 200
+    assert _get(client, f"/opdsx3/download/{book_id}").status_code == 200
+    assert _get(client, f"/opdsx4/download/{book_id}").status_code == 200
 
     settings = app.config["SETTINGS"]
     assert (settings.x3_cache_dir / f"{book_id}.epub").is_file()
@@ -161,12 +161,12 @@ def test_profiles_use_separate_cache_entries(
 
 
 def test_requires_authentication(client, folder_id) -> None:
-    assert client.get("/opds/x3/download/1").status_code == 401
-    assert client.get("/opds/x4/download/1").status_code == 401
+    assert client.get("/opdsx3/download/1").status_code == 401
+    assert client.get("/opdsx4/download/1").status_code == 401
 
 
 def test_unknown_book_returns_xml_404(client, folder_id) -> None:
-    resp = _get(client, "/opds/x3/download/999999")
+    resp = _get(client, "/opdsx3/download/999999")
 
     assert resp.status_code == 404
     assert resp.headers["Content-Type"] == XML_TYPE
@@ -177,7 +177,7 @@ def test_non_epub_book_returns_404(client, folder_id, root) -> None:
     _scan(folder_id)
     book_id = _book_ids()[0]
 
-    resp = _get(client, f"/opds/x4/download/{book_id}")
+    resp = _get(client, f"/opdsx4/download/{book_id}")
 
     assert resp.status_code == 404
     assert resp.headers["Content-Type"] == XML_TYPE
@@ -187,7 +187,7 @@ def test_path_traversal_rejected(client, folder_id, tmp_path) -> None:
     make_epub(tmp_path / "outside.epub", title="Escape")
     book_id = _insert_book(folder_id, "../outside.epub")
 
-    resp = _get(client, f"/opds/x3/download/{book_id}")
+    resp = _get(client, f"/opdsx3/download/{book_id}")
 
     assert resp.status_code == 404
 
@@ -213,8 +213,8 @@ def test_cache_hit_skips_reoptimization(
     book_id, _source = _library_book(root, folder_id)
     calls = _counting(monkeypatch)
 
-    first = _get(client, f"/opds/x3/download/{book_id}")
-    second = _get(client, f"/opds/x3/download/{book_id}")
+    first = _get(client, f"/opdsx3/download/{book_id}")
+    second = _get(client, f"/opdsx3/download/{book_id}")
 
     assert first.status_code == 200
     assert second.status_code == 200
@@ -226,11 +226,11 @@ def test_stale_cache_reoptimizes_when_mtime_changes(
 ) -> None:
     book_id, source = _library_book(root, folder_id)
     calls = _counting(monkeypatch)
-    _get(client, f"/opds/x3/download/{book_id}")
+    _get(client, f"/opdsx3/download/{book_id}")
 
     stat = source.stat()
     os.utime(source, (stat.st_atime, stat.st_mtime + 10))
-    resp = _get(client, f"/opds/x3/download/{book_id}")
+    resp = _get(client, f"/opdsx3/download/{book_id}")
 
     assert resp.status_code == 200
     assert len(calls) == 2
@@ -241,10 +241,10 @@ def test_source_modification_reoptimizes(
 ) -> None:
     book_id, source = _library_book(root, folder_id)
     calls = _counting(monkeypatch)
-    _get(client, f"/opds/x3/download/{book_id}")
+    _get(client, f"/opdsx3/download/{book_id}")
 
     make_epub(source, title="Dune Revised", authors=("Frank Herbert",))
-    resp = _get(client, f"/opds/x3/download/{book_id}")
+    resp = _get(client, f"/opdsx3/download/{book_id}")
 
     assert resp.status_code == 200
     assert len(calls) == 2
@@ -259,8 +259,8 @@ def test_optimization_never_touches_source(
     before_stat = source.stat()
     before_dir = sorted(path.name for path in root.iterdir())
 
-    assert _get(client, f"/opds/x3/download/{book_id}").status_code == 200
-    assert _get(client, f"/opds/x4/download/{book_id}").status_code == 200
+    assert _get(client, f"/opdsx3/download/{book_id}").status_code == 200
+    assert _get(client, f"/opdsx4/download/{book_id}").status_code == 200
 
     assert source.read_bytes() == before_bytes
     assert source.stat().st_mtime_ns == before_stat.st_mtime_ns
@@ -283,7 +283,7 @@ def test_optimizer_failure_returns_xml_500(
         optimizer_service, "process_epub", lambda *_args, **_kwargs: _FailedReport()
     )
 
-    resp = _get(client, f"/opds/x3/download/{book_id}")
+    resp = _get(client, f"/opdsx3/download/{book_id}")
 
     assert f"book_id={book_id}" in caplog.text
     assert "DRM protected" in caplog.text
@@ -307,7 +307,7 @@ def test_optimizer_exception_cleans_up(
 
     monkeypatch.setattr(optimizer_service, "process_epub", explode)
 
-    resp = _get(client, f"/opds/x4/download/{book_id}")
+    resp = _get(client, f"/opdsx4/download/{book_id}")
 
     assert f"book_id={book_id}" in caplog.text
     assert any(record.exc_info for record in caplog.records)
@@ -384,7 +384,7 @@ def test_cache_clear_removes_files_and_rows(
 ) -> None:
     book_id, source = _library_book(root, folder_id)
     source_bytes = source.read_bytes()
-    assert _get(client, f"/opds/x3/download/{book_id}").status_code == 200
+    assert _get(client, f"/opdsx3/download/{book_id}").status_code == 200
     settings = app.config["SETTINGS"]
     assert (settings.x3_cache_dir / f"{book_id}.epub").is_file()
 
@@ -415,14 +415,14 @@ def test_download_regenerates_after_cache_clear(
     client, folder_id, root
 ) -> None:
     book_id, _source = _library_book(root, folder_id)
-    first = _get(client, f"/opds/x3/download/{book_id}")
+    first = _get(client, f"/opdsx3/download/{book_id}")
     assert first.status_code == 200
 
     login_admin(client, password=PASSWORD)
     assert _clear_cache(client).status_code == 302
     assert _optimized_rows(book_id) == []
 
-    again = _get(client, f"/opds/x3/download/{book_id}")
+    again = _get(client, f"/opdsx3/download/{book_id}")
     assert again.status_code == 200
     assert again.data[:2] == b"PK"
     assert len(_optimized_rows(book_id)) == 1
@@ -502,7 +502,7 @@ def test_scan_prunes_cache_files_of_removed_books(
     removed, kept = _book_ids()
     settings = app.config["SETTINGS"]
     for book_id in (removed, kept):
-        assert _get(client, f"/opds/x3/download/{book_id}").status_code == 200
+        assert _get(client, f"/opdsx3/download/{book_id}").status_code == 200
     removed_file = settings.x3_cache_dir / f"{removed}.epub"
     kept_file = settings.x3_cache_dir / f"{kept}.epub"
     assert removed_file.is_file() and kept_file.is_file()
@@ -526,7 +526,7 @@ def test_folder_delete_prunes_cache_files(
 ) -> None:
     book_id, source = _library_book(root, folder_id)
     settings = app.config["SETTINGS"]
-    assert _get(client, f"/opds/x3/download/{book_id}").status_code == 200
+    assert _get(client, f"/opdsx3/download/{book_id}").status_code == 200
     cache_file = settings.x3_cache_dir / f"{book_id}.epub"
     assert cache_file.is_file()
 

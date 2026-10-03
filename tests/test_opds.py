@@ -156,8 +156,8 @@ def test_root_feed_is_the_folder_view(client, folder_id: int) -> None:
         sections[title] = (links[0].get("href", ""), links[0].get("type", ""))
     assert sections == {
         "books": (f"/opds/folders/{folder_id}", ACQ),
-        "X3 Catalog": ("/opds/x3", NAV),
-        "X4 Catalog": ("/opds/x4", NAV),
+        "X3 Catalog": ("/opdsx3", NAV),
+        "X4 Catalog": ("/opdsx4", NAV),
     }
 
 
