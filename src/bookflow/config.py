@@ -35,6 +35,18 @@ def _env_int(name: str, default: int) -> int:
 
 DEFAULT_SCAN_EXTENSIONS = (".epub", ".pdf", ".cbz", ".cbr", ".mobi", ".azw3")
 
+LOG_LEVELS = ("CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG")
+DEFAULT_LOG_LEVEL = "INFO"
+
+
+def _env_log_level(name: str, default: str) -> str:
+    """Read a logging level name; unusable values fall back."""
+    value = os.environ.get(name)
+    if value is None or value == "":
+        return default
+    level = value.strip().upper()
+    return level if level in LOG_LEVELS else default
+
 
 def _parse_extensions(value: str) -> tuple[str, ...]:
     """Parse a comma-separated extension list, normalized to `.ext`."""
@@ -65,6 +77,7 @@ class Settings:
     scan_extensions: tuple[str, ...] = DEFAULT_SCAN_EXTENSIONS
     browse_root: Path = Path("/")
     trusted_proxy_hops: int = 0
+    log_level: str = DEFAULT_LOG_LEVEL
 
     @property
     def cache_dir(self) -> Path:
@@ -100,6 +113,7 @@ class Settings:
                 Path(_env("OPDS_BROWSE_ROOT", "/")).expanduser().resolve()
             ),
             trusted_proxy_hops=_env_int("OPDS_TRUSTED_PROXY_HOPS", 0),
+            log_level=_env_log_level("OPDS_LOG_LEVEL", DEFAULT_LOG_LEVEL),
         )
 
     def ensure_directories(self) -> None:

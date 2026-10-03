@@ -6,6 +6,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from functools import partial
+from typing import Never
 from xml.etree import ElementTree
 from xml.sax.saxutils import escape as xml_escape
 
@@ -55,7 +56,7 @@ PATH_MAX_LENGTH = 1024
 
 
 @bp.get("/authentication")
-def authentication():
+def authentication() -> Response:
     """Serve the OPDS Authentication Document (public, per specification)."""
     return Response(
         authentication_document(), content_type=AUTH_DOCUMENT_TYPE
@@ -471,21 +472,21 @@ def _search_feed(profile: str | None) -> Response:
 
 
 @bp.get("/books/<int:book_id>")
-def book_feed(book_id: int):
+def book_feed(book_id: int) -> Response:
     return _book_feed(book_id, None)
 
 
 @bp.get("/x3/books/<int:book_id>")
-def x3_book_feed(book_id: int):
+def x3_book_feed(book_id: int) -> Response:
     return _book_feed(book_id, "x3")
 
 
 @bp.get("/x4/books/<int:book_id>")
-def x4_book_feed(book_id: int):
+def x4_book_feed(book_id: int) -> Response:
     return _book_feed(book_id, "x4")
 
 
-def _book_feed(book_id: int, profile: str | None):
+def _book_feed(book_id: int, profile: str | None) -> Response:
     ep = _endpoints(profile)
     with session_scope() as session:
         book = session.get(Book, book_id)
@@ -504,12 +505,12 @@ def _book_feed(book_id: int, profile: str | None):
 
 
 @bp.get("/download/<int:book_id>")
-def download(book_id: int):
+def download(book_id: int) -> Response:
     return send_book_response(book_file(book_id))
 
 
 @bp.get("/cover/<int:book_id>")
-def cover(book_id: int):
+def cover(book_id: int) -> Response:
     target = book_file(book_id)
     if target.suffix.lower() != ".epub":
         abort(404)
@@ -528,12 +529,12 @@ def cover(book_id: int):
 
 
 @bp.get("/x3/download/<int:book_id>")
-def x3_download(book_id: int):
+def x3_download(book_id: int) -> Response:
     return _optimized_download(book_id, "x3")
 
 
 @bp.get("/x4/download/<int:book_id>")
-def x4_download(book_id: int):
+def x4_download(book_id: int) -> Response:
     return _optimized_download(book_id, "x4")
 
 
@@ -541,7 +542,7 @@ def x4_download(book_id: int):
 
 
 @bp.get("/<path:unknown>")
-def unknown_path(unknown: str):
+def unknown_path(unknown: str) -> Never:
     abort(404)
 
 
@@ -636,7 +637,7 @@ def _clean_path(value: str) -> str:
     return "/".join(parts[:PATH_MAX_DEPTH])
 
 
-def _title_order():
+def _title_order() -> ColumnElement[str]:
     return func.lower(func.coalesce(Book.title, Book.relative_path))
 
 
@@ -740,7 +741,7 @@ def _optimized_download(book_id: int, profile: str) -> Response:
     return send_book_response(optimized, download_name=source.name)
 
 
-def _search_condition(query: str):
+def _search_condition(query: str) -> ColumnElement[bool]:
     pattern = f"%{_escape_like(query)}%"
     return or_(
         Book.title.ilike(pattern, escape="\\"),

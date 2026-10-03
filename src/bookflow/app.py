@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from flask import Flask, Response, jsonify, redirect, request, url_for
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -17,10 +19,33 @@ from bookflow.opds.routes import bp as opds_bp
 from bookflow.opds.routes import error_document
 
 
+def _configure_logging(level_name: str) -> None:
+    """Apply the configured level to the root logger.
+
+    A bare WSGI process installs no handlers, so Python's last-resort
+    handler would drop everything below WARNING and INFO events (scan
+    results, cache clears) never reach output. The level is always
+    applied; a stderr handler is added only when the process has none,
+    leaving pytest's capture handlers and gunicorn's log setup alone.
+    """
+    level = logging.getLevelNamesMapping().get(
+        level_name.upper(), logging.INFO
+    )
+    root = logging.getLogger()
+    root.setLevel(level)
+    if not root.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(
+            logging.Formatter("%(levelname)s %(name)s: %(message)s")
+        )
+        root.addHandler(handler)
+
+
 def create_app(settings: Settings | None = None) -> Flask:
     """Create and configure the Flask application."""
     if settings is None:
         settings = Settings.from_env()
+    _configure_logging(settings.log_level)
 
     app = Flask(__name__)
     app.config["SETTINGS"] = settings
@@ -56,11 +81,11 @@ def create_app(settings: Settings | None = None) -> Flask:
     app.register_blueprint(progression_bp)
 
     @app.get("/")
-    def index():
+    def index() -> Response:
         return redirect(url_for("admin.dashboard"))
 
     @app.get("/healthz")
-    def healthz():
+    def healthz() -> Response:
         return jsonify(status="ok")
 
     @app.errorhandler(HTTPException)

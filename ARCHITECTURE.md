@@ -115,7 +115,7 @@ bookflow/
 │   │                             health
 │   └── static/style.css
 │
-└── tests/                        288 tests (see §11)
+└── tests/                        296 tests (see §11)
 ```
 
 Deliberate deviations from the originally sketched layout: every ORM model
@@ -128,24 +128,26 @@ epubkit integration is a package `optimizer/epubkit/` rather than a single
 `src/bookflow/app.py` — factory pattern, one function:
 
 1. `Settings.from_env()` (or the settings passed in by tests).
-2. Flask config: secret key (`OPDS_SESSION_SECRET`, otherwise a random one
+2. `_configure_logging(settings.log_level)` — root logger level from
+   `OPDS_LOG_LEVEL`, plus a stderr handler when the process has none.
+3. Flask config: secret key (`OPDS_SESSION_SECRET`, otherwise a random one
    generated once and persisted to `data/.session_secret` so restarts and
    gunicorn workers keep sessions valid), `HttpOnly` + `SameSite=Lax`
    cookies, `Secure` from `OPDS_SESSION_COOKIE_SECURE`, `MAX_CONTENT_LENGTH`
    = 1 MB.
-3. `settings.ensure_directories()` — create `data/` and the x3/x4 cache dirs.
-4. `init_engine(settings)` — process-wide SQLAlchemy engine.
-5. `ProxyFix(x_for=…)` when `OPDS_TRUSTED_PROXY_HOPS` is set — rewrites
+4. `settings.ensure_directories()` — create `data/` and the x3/x4 cache dirs.
+5. `init_engine(settings)` — process-wide SQLAlchemy engine.
+6. `ProxyFix(x_for=…)` when `OPDS_TRUSTED_PROXY_HOPS` is set — rewrites
    `request.remote_addr` from `X-Forwarded-For`; skipped entirely (the
    default) when no trusted proxy is configured.
-6. Extensions (kept on `app.extensions`, not globals):
+7. Extensions (kept on `app.extensions`, not globals):
    - `password_verifier` — Argon2id hash of the configured password,
      built once at startup, used by both admin login and OPDS Basic Auth.
    - `login_rate_limiter` — in-memory failure counter per username.
-7. Jinja global `csrf_token` for form templates.
-8. Register four blueprints: `auth`, `admin`, `opds`, `progression`.
-9. `GET /` → `302` to `/admin/` (convenience redirect for the browser).
-10. `GET /healthz` → `{"status": "ok"}` (public liveness probe).
+8. Jinja global `csrf_token` for form templates.
+9. Register four blueprints: `auth`, `admin`, `opds`, `progression`.
+10. `GET /` → `302` to `/admin/` (convenience redirect for the browser).
+11. `GET /healthz` → `{"status": "ok"}` (public liveness probe).
 
 A module-level `app = create_app()` exists for `gunicorn bookflow.app:app`.
 Tests build apps through the `build_app` fixture factory
@@ -167,6 +169,7 @@ environment variable with a default (see `.env.example`):
 | `OPDS_SCAN_EXTENSIONS` | `.epub,.pdf,.cbz,.cbr,.mobi,.azw3` | scanner scope |
 | `OPDS_BROWSE_ROOT` | `/` | root the admin folder browser is clamped to (typed paths unaffected) |
 | `OPDS_TRUSTED_PROXY_HOPS` | `0` | reverse proxies in front of the app; `> 0` rewrites `request.remote_addr` from `X-Forwarded-For` (login rate limiter behind a proxy) |
+| `OPDS_LOG_LEVEL` | `INFO` | root logger level applied by `create_app`; a stderr handler is added only when the process has none |
 
 Derived paths: `cache_dir = data/cache/optimized`,
 `x3_cache_dir`/`x4_cache_dir` beneath it. No password is ever stored —
@@ -511,7 +514,7 @@ threads (`check_same_thread=False` + WAL-free default journal).
 
 ## 11. Testing
 
-`tests/` (288 tests, `uv run pytest`):
+`tests/` (296 tests, `uv run pytest`):
 
 - `conftest.py` — temp `Settings` (fresh data dir + SQLite per test), the
   `build_app` factory (runs `alembic upgrade head` unless `migrate=False`,

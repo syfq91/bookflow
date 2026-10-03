@@ -100,6 +100,32 @@ def test_trusted_proxy_hops_unusable_values_stay_off(
     assert Settings.from_env().trusted_proxy_hops == 0
 
 
+def test_log_level_defaults_to_info(monkeypatch, tmp_path: Path) -> None:
+    for key in list(os.environ):
+        if key.startswith("OPDS_"):
+            monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("OPDS_DATA_DIR", str(tmp_path / "data"))
+
+    assert Settings.from_env().log_level == "INFO"
+
+
+def test_log_level_env_override(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("OPDS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("OPDS_LOG_LEVEL", "debug")
+
+    assert Settings.from_env().log_level == "DEBUG"
+
+
+@pytest.mark.parametrize("value", ["", "loud", "12"])
+def test_log_level_unusable_values_stay_default(
+    monkeypatch, tmp_path: Path, value: str
+) -> None:
+    monkeypatch.setenv("OPDS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("OPDS_LOG_LEVEL", value)
+
+    assert Settings.from_env().log_level == "INFO"
+
+
 def test_derived_cache_paths(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     settings = Settings(

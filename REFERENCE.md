@@ -19,8 +19,15 @@ All settings come from environment variables (defaults in parentheses):
 | `OPDS_SCAN_EXTENSIONS`      | `.epub,.pdf,.cbz,.cbr,.mobi,.azw3` | Comma-separated extensions the scanner indexes |
 | `OPDS_BROWSE_ROOT`          | `/`         | Root the admin folder browser (`Browse…` on Add Folder) is clamped to; typed paths are unaffected |
 | `OPDS_TRUSTED_PROXY_HOPS`   | `0`         | Reverse proxies in front of BookFlow; `> 0` takes the client address from `X-Forwarded-For` (see below) |
+| `OPDS_LOG_LEVEL`            | `INFO`      | Root logger level: `DEBUG`, `INFO`, `WARNING`, `ERROR` or `CRITICAL` (unusable values fall back to `INFO`) |
 
 `.env.example` documents the same variables for a bare-metal install.
+
+**Logging.** `create_app` applies `OPDS_LOG_LEVEL` to the root logger and
+installs a stderr handler when the process has none, so scan summaries,
+cache-clear notices and metadata debug lines reach the output (gunicorn
+collects them in the worker error log). `WARNING` silences the INFO
+events; `DEBUG` adds the per-file metadata messages.
 
 ## Admin UI
 

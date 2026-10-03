@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from datetime import datetime
 from pathlib import Path
+from typing import NotRequired, TypedDict
 
 from flask import (
     Blueprint,
+    Response,
     abort,
     current_app,
     flash,
@@ -22,7 +25,12 @@ from bookflow.auth.decorators import login_required, require_csrf
 from bookflow.config import Settings
 from bookflow.database.database import session_scope
 from bookflow.database.models import Book, LibraryFolder, OptimizedBook
-from bookflow.health import HealthCheck, library_statistics, run_checks
+from bookflow.health import (
+    HealthCheck,
+    HealthStats,
+    library_statistics,
+    run_checks,
+)
 from bookflow.library.browse import BrowseResult, browse_directory
 from bookflow.library.paths import book_file, send_book_response
 from bookflow.library.scanner import ScanInProgress, ScanResult, scan_folder
@@ -44,6 +52,20 @@ _DB_UNINITIALIZED_MESSAGE = (
     "Database not initialized. Run: uv run alembic upgrade head"
 )
 
+
+class DashboardStats(TypedDict):
+    """Shape of the ``stats`` object the dashboard renders."""
+
+    books: int
+    folders: int
+    total_size: int
+    last_scan: datetime | None
+    last_scan_duration: float | None
+    scan_errors: int
+    cache: dict[str, int]
+    db_error: NotRequired[str]
+
+
 PAGE_SIZE = 50
 
 FOLDER_SEGMENTS_LIMIT = 500
@@ -51,7 +73,7 @@ FOLDER_SEGMENTS_LIMIT = 500
 
 @bp.get("/")
 @login_required
-def dashboard():
+def dashboard() -> str:
     settings = current_app.config["SETTINGS"]
     return render_template(
         "dashboard.html",
@@ -62,13 +84,13 @@ def dashboard():
 
 @bp.get("/folders")
 @login_required
-def folders():
+def folders() -> str:
     return _folders_response()
 
 
 @bp.get("/folders/new")
 @login_required
-def folder_new():
+def folder_new() -> str:
     return render_template(
         "add_folder.html", path=request.args.get("path", ""), error=None
     )
@@ -76,7 +98,7 @@ def folder_new():
 
 @bp.get("/folders/browse")
 @login_required
-def folder_browse():
+def folder_browse() -> str | tuple[str, int]:
     settings = current_app.config["SETTINGS"]
     raw = request.args.get("path", "")
     result = browse_directory(raw, settings.browse_root)
@@ -93,7 +115,7 @@ def folder_browse():
 
 @bp.post("/folders")
 @login_required
-def folder_create():
+def folder_create() -> str | Response | tuple[str, int]:
     raw = request.form.get("path", "")
     result = add_folder(raw)
     if not result.ok:
@@ -103,7 +125,7 @@ def folder_create():
 
 @bp.post("/folders/<int:folder_id>/scan")
 @login_required
-def folder_scan(folder_id: int):
+def folder_scan(folder_id: int) -> Response | tuple[str, int]:
     folder = get_folder(folder_id)
     if folder is None:
         abort(404)
@@ -112,7 +134,7 @@ def folder_scan(folder_id: int):
 
 @bp.post("/folders/<int:folder_id>/delete")
 @login_required
-def folder_delete(folder_id: int):
+def folder_delete(folder_id: int) -> Response:
     folder = get_folder(folder_id)
     if folder is None:
         abort(404)
@@ -127,14 +149,14 @@ def folder_delete(folder_id: int):
 
 @bp.get("/library")
 @login_required
-def library_index():
+def library_index() -> Response:
     """The root list lives on the Library page; keep the old URL working."""
     return redirect(url_for("admin.folders"))
 
 
 @bp.get("/library/<int:folder_id>")
 @login_required
-def library_tree(folder_id: int):
+def library_tree(folder_id: int) -> str:
     """Show one directory level of a registered folder, from the index."""
     folder = get_folder(folder_id)
     if folder is None:
@@ -203,13 +225,13 @@ def library_tree(folder_id: int):
 
 @bp.get("/books/<int:book_id>/download")
 @login_required
-def book_download(book_id: int):
+def book_download(book_id: int) -> Response:
     return send_book_response(book_file(book_id))
 
 
 @bp.post("/cache/clear")
 @login_required
-def cache_clear():
+def cache_clear() -> Response:
     files, rows = clear_optimized_cache()
     flash(
         f"Cleared optimization cache: {files} file(s) and {rows} index "
@@ -221,7 +243,7 @@ def cache_clear():
 
 @bp.get("/health")
 @login_required
-def health():
+def health() -> str:
     settings = current_app.config["SETTINGS"]
     return render_template(
         "health.html",
@@ -230,7 +252,7 @@ def health():
     )
 
 
-def _folders_response():
+def _folders_response() -> str:
     return render_template("folders.html", folders=list_folders())
 
 
@@ -275,7 +297,9 @@ def _browse_conflicts(result: BrowseResult, registered: list[str]) -> set[str]:
     return conflicts
 
 
-def _scan_and_respond(folder_id: int | None, path: str | None):
+def _scan_and_respond(
+    folder_id: int | None, path: str | None
+) -> Response | tuple[str, int]:
     """Scan a folder, flash the outcome, and answer with its response."""
     if folder_id is None or path is None:
         flash("Folder could not be scanned.", "error")
@@ -321,17 +345,17 @@ def _dashboard_stats() -> dict[str, object]:
 
 
 def _stats_or_default(
-    load: Callable[[], dict[str, object]],
-    empty: Callable[[], dict[str, object]],
+    load: Callable[[], Mapping[str, object]],
+    empty: Callable[[], Mapping[str, object]],
 ) -> dict[str, object]:
     """Run a stats query, or answer with its complete empty shape."""
     try:
-        return load()
+        return dict(load())
     except OperationalError:
         return {**empty(), "db_error": _DB_UNINITIALIZED_MESSAGE}
 
 
-def _empty_health_stats() -> dict[str, object]:
+def _empty_health_stats() -> HealthStats:
     return {
         "total_books": 0,
         "total_size": 0,
@@ -343,7 +367,7 @@ def _empty_health_stats() -> dict[str, object]:
     }
 
 
-def _empty_dashboard_stats() -> dict[str, object]:
+def _empty_dashboard_stats() -> DashboardStats:
     return {
         "books": 0,
         "folders": 0,
@@ -355,7 +379,7 @@ def _empty_dashboard_stats() -> dict[str, object]:
     }
 
 
-def _query_stats() -> dict[str, object]:
+def _query_stats() -> DashboardStats:
     with session_scope() as session:
         books = session.scalar(select(func.count(Book.id))) or 0
         folders = session.scalar(select(func.count(LibraryFolder.id))) or 0
@@ -377,7 +401,7 @@ def _query_stats() -> dict[str, object]:
             .order_by(LibraryFolder.last_scan_at.desc())
             .limit(1)
         )
-        cache = {"x3": 0, "x4": 0}
+        cache: dict[str, int] = {"x3": 0, "x4": 0}
         for row in session.execute(
             select(
                 OptimizedBook.profile,

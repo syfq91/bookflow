@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from bookflow.database.database import session_scope
 from bookflow.database.models import Book, LibraryFolder
@@ -163,7 +164,7 @@ def _changed_fields(
 
 
 def _reconcile(
-    session,
+    session: Session,
     folder_id: int,
     root: Path,
     found: dict[str, tuple[int, float]],

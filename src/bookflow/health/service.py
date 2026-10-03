@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
+from typing import NotRequired, TypedDict
 
 from flask import current_app
 from sqlalchemy import func, select, text
@@ -29,6 +31,63 @@ class HealthCheck:
     detail: str
 
 
+class FormatStats(TypedDict):
+    format: str
+    books: int
+    size: int
+
+
+class FolderStats(TypedDict):
+    name: str
+    path: str
+    books: int
+    size: int
+
+
+class CacheProfile(TypedDict):
+    books: int
+    size: int
+
+
+class ProgressionStats(TypedDict):
+    books: int
+    devices: list[str]
+
+
+class LastSuccess(TypedDict):
+    folder: str
+    at: datetime | None
+    duration: float | None
+
+
+class ScanError(TypedDict):
+    folder: str
+    message: str
+
+
+class ScannerStats(TypedDict):
+    last_success: LastSuccess | None
+    errors: list[ScanError]
+
+
+class HealthStats(TypedDict):
+    """Shape of the ``stats`` object the health page renders.
+
+    ``db_error`` is added by the admin view when the index has not been
+    migrated yet; every other key is always present, on both the queried
+    and the empty fallback shape.
+    """
+
+    total_books: int
+    total_size: int
+    formats: list[FormatStats]
+    folders: list[FolderStats]
+    cache: dict[str, CacheProfile]
+    progression: ProgressionStats
+    scanner: ScannerStats
+    db_error: NotRequired[str]
+
+
 def run_checks(settings: Settings) -> list[HealthCheck]:
     """Run every component check, in dashboard order."""
     return [
@@ -40,7 +99,7 @@ def run_checks(settings: Settings) -> list[HealthCheck]:
     ]
 
 
-def library_statistics() -> dict[str, object]:
+def library_statistics() -> HealthStats:
     """Aggregate index statistics from the database (no filesystem walk)."""
     with session_scope() as session:
         total_books = int(session.scalar(select(func.count(Book.id))) or 0)
@@ -49,7 +108,7 @@ def library_statistics() -> dict[str, object]:
             or 0
         )
 
-        formats = [
+        formats: list[FormatStats] = [
             {
                 "format": row[0] or "unknown",
                 "books": int(row[1]),
@@ -66,7 +125,7 @@ def library_statistics() -> dict[str, object]:
             )
         ]
 
-        folders = [
+        folders: list[FolderStats] = [
             {
                 "name": row[0],
                 "path": row[1],
@@ -90,7 +149,7 @@ def library_statistics() -> dict[str, object]:
             )
         ]
 
-        cache: dict[str, dict[str, int]] = {
+        cache: dict[str, CacheProfile] = {
             "x3": {"books": 0, "size": 0},
             "x4": {"books": 0, "size": 0},
         }
@@ -103,7 +162,7 @@ def library_statistics() -> dict[str, object]:
         ):
             cache[row[0]] = {"books": int(row[1]), "size": int(row[2])}
 
-        progression = {
+        progression: ProgressionStats = {
             "books": int(session.scalar(select(func.count(Progression.id))) or 0),
             "devices": sorted(
                 {
@@ -116,7 +175,7 @@ def library_statistics() -> dict[str, object]:
             ),
         }
 
-        errors = [
+        errors: list[ScanError] = [
             {"folder": row[0], "message": row[2] or (row[1] or "scan failed")}
             for row in session.execute(
                 select(
@@ -139,7 +198,7 @@ def library_statistics() -> dict[str, object]:
             .order_by(LibraryFolder.last_scan_at.desc())
             .limit(1)
         )
-        last_success: dict[str, object] | None = None
+        last_success: LastSuccess | None = None
         if last_ok is not None:
             last_success = {
                 "folder": last_ok.name,

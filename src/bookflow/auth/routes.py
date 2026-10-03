@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from flask import (
     Blueprint,
+    Response,
     current_app,
     redirect,
     render_template,
@@ -25,14 +26,14 @@ bp.before_request(require_csrf)
 
 
 @bp.get("/admin/login")
-def login():
+def login() -> str | Response:
     if session.get(ADMIN_SESSION_KEY):
         return redirect(url_for("admin.dashboard"))
     return render_template("login.html", next_target=request.args.get("next", ""))
 
 
 @bp.post("/admin/login")
-def login_post():
+def login_post() -> str | Response | tuple[str, int]:
     limiter = current_app.extensions["login_rate_limiter"]
     verifier = current_app.extensions["password_verifier"]
     username = request.form.get("username", "")
@@ -81,6 +82,6 @@ def login_post():
 
 
 @bp.post("/admin/logout")
-def logout():
+def logout() -> Response:
     session.clear()
     return redirect(url_for("auth.login"))

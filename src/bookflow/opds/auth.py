@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from flask import Response, current_app, request, url_for
+from werkzeug.datastructures import Authorization
 
 from bookflow.auth.service import PasswordVerifier
 
@@ -16,7 +17,9 @@ AUTH_DOCUMENT_REL = "http://opds-spec.org/auth/document"
 BASIC_AUTH_FLOW = "http://opds-spec.org/auth/basic"
 
 
-def authenticate(verifier: PasswordVerifier, authorization) -> Response | None:
+def authenticate(
+    verifier: PasswordVerifier, authorization: Authorization | None
+) -> Response | None:
     """Return an error response unless the request carries valid credentials.
 
     ``authorization`` is the parsed ``request.authorization`` value. A 401

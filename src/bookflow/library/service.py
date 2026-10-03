@@ -7,7 +7,9 @@ filesystem is never written to, renamed or deleted.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
+from typing import TypedDict
 
 from sqlalchemy import func, select
 
@@ -25,6 +27,20 @@ class FolderResult:
     path: str | None = None
     name: str | None = None
     error: str | None = None
+
+
+class FolderData(TypedDict):
+    """One folder row as the admin templates and the browse page see it."""
+
+    id: int
+    path: str
+    name: str
+    books: int
+    size: int
+    last_scan_at: datetime | None
+    last_scan_duration: float | None
+    last_scan_status: str | None
+    last_scan_error: str | None
 
 
 def add_folder(raw_path: str) -> FolderResult:
@@ -71,7 +87,7 @@ def remove_folder(folder_id: int) -> bool:
         return True
 
 
-def get_folder(folder_id: int) -> dict[str, object] | None:
+def get_folder(folder_id: int) -> FolderData | None:
     """Return display data for one folder, or None when unknown."""
     with session_scope() as session:
         folder = session.get(LibraryFolder, folder_id)
@@ -86,7 +102,7 @@ def get_folder(folder_id: int) -> dict[str, object] | None:
         return _folder_data(folder, books, size)
 
 
-def list_folders() -> list[dict[str, object]]:
+def list_folders() -> list[FolderData]:
     """Return every registered folder with its index statistics."""
     with session_scope() as session:
         folders = session.scalars(
@@ -109,7 +125,7 @@ def list_folders() -> list[dict[str, object]]:
         ]
 
 
-def _folder_data(folder: LibraryFolder, books: int, size: int) -> dict[str, object]:
+def _folder_data(folder: LibraryFolder, books: int, size: int) -> FolderData:
     """The row shape shared by the folder list and the single-folder lookup."""
     return {
         "id": folder.id,

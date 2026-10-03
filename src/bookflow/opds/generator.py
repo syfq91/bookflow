@@ -182,7 +182,9 @@ def nav_entry(
     return entry
 
 
-def author_entry(name: str, count: int, href: str, updated: datetime | None):
+def author_entry(
+    name: str, count: int, href: str, updated: datetime | None
+) -> ElementTree.Element:
     """Build the Atom entry listing one author."""
     return nav_entry(
         entry_id=f"tag:bookflow,author,{name}",

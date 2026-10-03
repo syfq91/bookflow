@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Never
 
 from flask import Blueprint, Response, abort, request
 from sqlalchemy import select
@@ -44,7 +45,7 @@ class _Document:
 
 
 @bp.get("/<int:book_id>/progression")
-def publication_progression(book_id: int):
+def publication_progression(book_id: int) -> Response:
     with session_scope() as session:
         if session.get(Book, book_id) is None:
             abort(404)
@@ -58,7 +59,7 @@ def publication_progression(book_id: int):
 
 
 @bp.put("/<int:book_id>/progression")
-def update_publication_progression(book_id: int):
+def update_publication_progression(book_id: int) -> Response:
     with session_scope() as session:
         if session.get(Book, book_id) is None:
             abort(404)
@@ -94,7 +95,7 @@ def update_publication_progression(book_id: int):
 
 
 @bp.get("/<path:unknown>")
-def unknown_publication_path(unknown: str):
+def unknown_publication_path(unknown: str) -> Never:
     """Own unmatched paths under this prefix.
 
     Without this rule the catalog blueprint's ``/<path:unknown>`` answers
@@ -136,7 +137,7 @@ def _problem(status: int, type_uri: str, title: str) -> Response:
 # --- document mapping -------------------------------------------------------
 
 
-def _parse_document(payload) -> _Document:
+def _parse_document(payload: object) -> _Document:
     if not isinstance(payload, dict):
         raise ValueError("progression payload must be an object")
     title = payload.get("title")
@@ -167,7 +168,7 @@ def _parse_document(payload) -> _Document:
     )
 
 
-def _parse_timestamp(value) -> datetime:
+def _parse_timestamp(value: object) -> datetime:
     if not isinstance(value, str) or not value.strip():
         raise ValueError("modified is required")
     text = value.strip()
@@ -182,7 +183,7 @@ def _parse_timestamp(value) -> datetime:
     return parsed.astimezone(UTC)
 
 
-def _parse_progression(value) -> float:
+def _parse_progression(value: object) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError("progression must be a number")
     number = float(value)
@@ -191,8 +192,8 @@ def _parse_progression(value) -> float:
     return number
 
 
-def _to_document(row: Progression) -> dict:
-    document: dict = {}
+def _to_document(row: Progression) -> dict[str, object]:
+    document: dict[str, object] = {}
     if row.title is not None:
         document["title"] = row.title
     document["modified"] = _format_timestamp(

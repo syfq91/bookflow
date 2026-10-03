@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import shutil
 from contextlib import contextmanager
@@ -350,3 +351,14 @@ def test_scan_walks_and_parses_with_no_session_open(
     assert result.status == "ok"
     assert result.added == 1
     assert observed and set(observed) == {0}
+
+
+
+def test_scan_logs_result_at_info(folder_id: int, root: Path, caplog) -> None:
+    """The scan report is logged at INFO, below the old WARNING floor."""
+    make_epub(root / "dune.epub", title="Dune")
+    caplog.set_level(logging.INFO, logger="bookflow.library.scanner")
+
+    _scan(folder_id)
+
+    assert any("scan folder=" in record.getMessage() for record in caplog.records)

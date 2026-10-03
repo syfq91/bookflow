@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import logging
+from dataclasses import replace
+
 from bookflow.config import Settings
 
 
@@ -35,3 +38,25 @@ def test_error_outside_opds_keeps_flask_html(client) -> None:
 
     assert response.status_code == 405
     assert response.content_type.startswith("text/html")
+
+
+
+def test_create_app_applies_log_level(settings: Settings, build_app) -> None:
+    build_app(replace(settings, log_level="DEBUG"), migrate=False)
+    assert logging.getLogger().level == logging.DEBUG
+
+    build_app(settings, migrate=False)
+    assert logging.getLogger().level == logging.INFO
+
+
+def test_create_app_makes_info_records_reach_handlers(
+    settings: Settings, build_app, caplog
+) -> None:
+    build_app(settings, migrate=False)
+
+    logging.getLogger("bookflow.reachable").info("INFO reaches the handlers")
+
+    assert any(
+        "INFO reaches the handlers" in record.getMessage()
+        for record in caplog.records
+    )

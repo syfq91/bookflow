@@ -3,8 +3,9 @@
 Open findings from a codebase audit (2026-09-30, refreshed 2026-10-03):
 dead code, refactor candidates and best-practice gaps. Section 1 is
 cleared (2026-09-30); twelve items in §2/§3 and two in §4 were cleared
-2026-10-02, three more in §3 on 2026-10-03. Tick items off as they land;
-delete entries once resolved.
+2026-10-02, three more in §3 on 2026-10-03, then the §3 logging finding,
+the `library_statistics` shape and all of §5 the same day. Tick items off
+as they land; delete entries once resolved.
 
 Scope: `src/bookflow/**`, `tests/**`, docs and deploy files. Vendored
 `src/bookflow/optimizer/epubkit/` was excluded. Every finding was verified
@@ -90,11 +91,13 @@ reached via dynamic `url_for`), all templates and `static/style.css`
       folder_id)` plus one `count`/`sum` query for that row, and the dict
       shape is shared with `list_folders()` through `_folder_data()`, so
       the two can no longer drift.
-- [ ] **`library_statistics()` is 116 lines**
-      `src/bookflow/health/service.py:43-158` — nine queries, six dict
-      sections, one function; return shape is `dict[str, object]`
-      enforced only by templates. Split per section (natural break points
-      at `:93` and `:119`) or return a TypedDict/dataclass.
+- [x] **`library_statistics()` is 116 lines** — **resolved (2026-10-03)**:
+      the shape remedy, not the split: it returns `HealthStats`, with
+      `FormatStats` / `FolderStats` / `CacheProfile` / `ProgressionStats` /
+      `ScannerStats` TypedDicts in `health/service.py`, so what the
+      templates read is written down and the empty fallback in
+      `admin/routes.py` has the same declared shape. The nine queries stay
+      in one function.
 - [ ] **Template copy-paste**
       `dashboard.html:74-82` ≡ `health.html:14-22` (badge loop);
       `browse_folders.html:18-27` ≡ `library.html:7-19` (breadcrumbs);
@@ -126,13 +129,20 @@ reached via dynamic `url_for`), all templates and `static/style.css`
       shows instead of hydrating whole `Book` rows. Books paginate at
       `PAGE_SIZE` = 50 via `?page=` (`admin/routes.py:_page()` mirrors
       the OPDS helper) with prev/next links in `library.html`.
-- [ ] **No logging configuration → `logger.info` is silently dropped**
-      Loggers at `library/scanner.py:23`, `library/metadata.py:20`,
-      `optimizer/service.py:19`; no `basicConfig`/`dictConfig` anywhere
-      and no `log_level` setting, so the root logger stays at WARNING.
-      Scan results and cache-clear events never reach output. Add
-      `OPDS_LOG_LEVEL` to `Settings` and configure logging in
-      `create_app`.
+- [x] **No logging configuration → `logger.info` is silently dropped**
+      — **resolved (2026-10-03)**: `Settings.log_level` reads
+      `OPDS_LOG_LEVEL` (default `INFO`; unusable values fall back) and
+      `app.py:_configure_logging()` runs from `create_app` — root level
+      always applied, a stderr handler added only when the process has
+      none, so pytest's capture handlers and gunicorn's log setup are left
+      alone. Scan summaries and cache-clear notices now reach output.
+      `migrations/env.py` passes `disable_existing_loggers=False` to
+      alembic's `fileConfig`, which otherwise silenced every BookFlow
+      logger for the rest of the process whenever a migration ran
+      in-process. Tests: env default/override/unusable values, root level
+      after `create_app`, INFO records reaching handlers, the scan report
+      logged at INFO. Docs: `REFERENCE.md`, `.env.example`,
+      `ARCHITECTURE.md` (§4 steps, §5 table).
 - [x] **Incomplete error coverage on `/opds/*`**
       — **resolved (2026-10-02)**: both blueprints register
       `@bp.errorhandler(HTTPException)` (`opds/routes.py`
@@ -256,19 +266,31 @@ reached via dynamic `url_for`), all templates and `static/style.css`
 
 ## 5. Type hints / docstrings (lower priority)
 
-- [ ] Helper-layer gaps: `opds/generator.py:185 author_entry` (no return
-      type), `opds/auth.py:19 authenticate` (untyped `authorization`),
-      `opds/routes.py:482,487,492,496,515,527,546,551,559,654,764`
-      (no return types), `opds/progression.py:143,174,189,198` (untyped
-      params; `dict` → `dict[str, object]`).
-- [ ] ~35 route handlers across `admin/routes.py`, `opds/routes.py`,
-      `auth/routes.py`, `opds/progression.py`, `app.py` lack
-      `-> Response | str | tuple[...]`.
-- [ ] Structural typing: `list[dict[str, object]]`
-      (`library/service.py:94`) and `dict[str, object]`
-      (`health/service.py:43`, `admin/routes.py:337,348`) — consumers are
-      Jinja templates, so typos surface as template errors. Consider a
-      frozen dataclass / `TypedDict`.
+- [x] Helper-layer gaps — **resolved (2026-10-03)**: `author_entry`
+      returns `ElementTree.Element`; `authenticate()` takes
+      `Authorization | None`; the OPDS catalog's ten untyped views and
+      `_book_feed` return `Response`, `_title_order` returns
+      `ColumnElement[str]` and `_search_condition`
+      `ColumnElement[bool]`; `progression`'s `_parse_document`,
+      `_parse_timestamp` and `_parse_progression` take `object` (they
+      validate the JSON) and `_to_document` returns
+      `dict[str, object]`. Also closed the same gap in
+      `scanner._reconcile(session: Session, …)` and
+      `database._enable_sqlite_foreign_keys(...)`; an AST sweep now finds
+      no unannotated function outside the vendored epubkit.
+- [x] Route handler return types — **resolved (2026-10-03)**: every view
+      in `admin/routes.py`, `auth/routes.py`, `opds/routes.py`,
+      `opds/progression.py` and `app.py` declares what it returns —
+      `Response`, `str`, or the `str | Response | tuple[str, int]`
+      unions the render+status handlers actually produce; the
+      abort-only unknown-path views are `Never`.
+- [x] Structural typing — **resolved (2026-10-03)**: `HealthStats` (with
+      its section TypedDicts) in `health/service.py`, `DashboardStats`
+      in `admin/routes.py`, `FolderData` in `library/service.py` replace
+      the bare `dict[str, object]` returns; `_stats_or_default()` takes
+      `Callable[[], Mapping[str, object]]` so both shapes feed it.
+      Runtime values are still plain dicts, so templates and the
+      equality assertions are unchanged.
 
 ## 6. Minor / cosmetic
 
@@ -295,7 +317,7 @@ reached via dynamic `url_for`), all templates and `static/style.css`
   single credential, no secrets in logs; vendored epubkit untouched.
 - `os.environ` is read only in `config.py`.
 - `ruff check .` passes; `F401`/`F811` clean; no commented-out code, no
-  `TODO`/`FIXME`, no unreachable branches; test suite clean (288 tests).
+  `TODO`/`FIXME`, no unreachable branches; test suite clean (296 tests).
 - No queries in Jinja templates; no N+1 (`list_folders`,
   `library_statistics`, `_query_stats` are aggregate; `get_folder` is a
   fixed two-query lookup and `book_file()` one row).
@@ -334,4 +356,8 @@ reached via dynamic `url_for`), all templates and `static/style.css`
    profile locks; `compose.yml` ships an empty `OPDS_ADMIN_PASSWORD` (no
    guessable default); `OPDS_TRUSTED_PROXY_HOPS` + `ProxyFix` make the
    login limiter proxy-aware, documented in `REFERENCE.md`.
-6. **§3 logging, §5 typing** — good first-issue batch.
+6. ~~§3 logging, §5 typing~~ **done (2026-10-03)** — `OPDS_LOG_LEVEL`
+   + root-logger configuration in `create_app`, alembic's `fileConfig`
+   no longer disables existing loggers, every helper and route handler
+   annotated, `HealthStats` / `DashboardStats` / `FolderData`
+   TypedDicts; 8 new tests.
