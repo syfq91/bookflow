@@ -4,7 +4,9 @@ Open findings from a codebase audit (2026-09-30, refreshed 2026-10-03):
 dead code, refactor candidates and best-practice gaps. Section 1 is
 cleared (2026-09-30); twelve items in §2/§3 and two in §4 were cleared
 2026-10-02, three more in §3 on 2026-10-03, then the §3 logging finding,
-the `library_statistics` shape and all of §5 the same day. Tick items off
+the `library_statistics` shape and all of §5 the same day. Twelve
+findings are still open (2 in §2, 5 in §3, 3 in §4, 2 in §6) and are
+planned as steps 7–12 under "Suggested order of attack". Tick items off
 as they land; delete entries once resolved.
 
 Scope: `src/bookflow/**`, `tests/**`, docs and deploy files. Vendored
@@ -106,7 +108,7 @@ reached via dynamic `url_for`), all templates and `static/style.css`
 - [ ] **Magic session key in template**
       `templates/layout.html:16` hardcodes `session.get('admin')` while
       the code uses `ADMIN_SESSION_KEY` (`auth/service.py:16`). Register
-      an `is_admin` Jinja global next to `csrf_token` (`app.py:38`).
+      an `is_admin` Jinja global next to `csrf_token` (`app.py:76`).
 
 ## 3. Best practice / correctness
 
@@ -176,9 +178,9 @@ reached via dynamic `url_for`), all templates and `static/style.css`
       fallback before returning the document (skip
       `/opds/authentication`) or accept that routing errors are public.
 - [ ] **Login failure returns HTTP 200**
-      `src/bookflow/auth/routes.py:75-82` — 429/503/400 are used
-      correctly elsewhere, so 200 makes success indistinguishable from
-      failure for scripts and monitoring. Return 401 (or 422).
+      `src/bookflow/auth/routes.py:73-81` — 429/503 are used correctly
+      elsewhere, so 200 makes success indistinguishable from failure for
+      scripts and monitoring. Return 401 (or 422).
 - [x] **Rate limiter keyed on `request.remote_addr` with no proxy
       awareness** — **resolved (2026-10-03)**: `OPDS_TRUSTED_PROXY_HOPS`
       (`Settings.trusted_proxy_hops`, default `0`) wraps `app.wsgi_app`
@@ -215,17 +217,18 @@ reached via dynamic `url_for`), all templates and `static/style.css`
       cache, folder-delete prune, clear spares an in-flight generation,
       clear sweeps stale scratch.
 - [ ] **Optimizer failure logs omit the book id**
-      `src/bookflow/optimizer/service.py:226-232, 242` — `"optimization
+      `src/bookflow/optimizer/service.py:227-233, 242` — `"optimization
       failed for %s profile"` names only the profile. Add `book_id`/file
-      name; consider `logger.exception` at `:242`.
+      name; use `logger.exception` at `:242` now that step 6 makes the
+      record reach output.
 - [ ] **Module-level `app = create_app()` at import time**
-      `src/bookflow/app.py:90` reads env, creates `data/`, persists the
+      `src/bookflow/app.py:115` reads env, creates `data/`, persists the
       session secret and initializes the engine on import (already a
       documented gotcha — `tests/conftest.py` has to `mkdtemp` at import
       time). Consider a `bookflow/wsgi.py` factory target so importing
       `bookflow.app` is side-effect free.
 - [ ] **Progression writes are not serialized per book**
-      `src/bookflow/opds/progression.py:75-92` read→compare→write has no
+      `src/bookflow/opds/progression.py:73-91` read→compare→write has no
       lock, so two devices PUTting simultaneously can hit a busy-timeout
       500 instead of a clean 409. Mirror the per-book locks in
       `optimizer/locks.py`.
@@ -253,13 +256,14 @@ reached via dynamic `url_for`), all templates and `static/style.css`
       `select(func.count(...))`); `session.query` no longer appears in any
       `.py` file outside the vendored optimizer.
 - [ ] **`test_unreadable_subdirectory_reports_partial` fails as root**
-      `tests/test_scanner.py:201-217` relies on `chmod 0o000`; root (typical
-      CI/Docker) can still read the dir, so the assertion flips. Guard
-      with `pytest.mark.skipif(os.geteuid() == 0, ...)`.
-- [ ] **Fragile negative assertion** `tests/test_health.py:134`
+      `tests/test_scanner.py:202-217` relies on `chmod 0o000`; root
+      (typical CI/Docker) can still read the dir, so the assertion
+      flips. Guard with `pytest.mark.skipif(os.geteuid() == 0, ...)` and
+      skip the chmod entirely on that path.
+- [ ] **Fragile negative assertion** `tests/test_health.py:135`
       `assert b"never" not in resp.data` passes as long as the literal
       never appears anywhere on the page; assert on the rendered
-      `last_success` instead.
+      `last_success` (folder name + timestamp) instead.
 - [ ] **Temp dir leaked per session** `tests/conftest.py:14`
       `tempfile.mkdtemp(prefix="bookflow-test-")` is created at import
       time and never removed.
@@ -298,10 +302,11 @@ reached via dynamic `url_for`), all templates and `static/style.css`
       `# noqa: E402` in `tests/conftest.py` were removed (ruff does not
       flag the `os.environ.setdefault(...)`-before-import pattern), and
       `health/service.py:206`'s `# noqa: F401` is in use, so it stays.
-- [ ] Non-default ruff rules flag 55 findings across `ARG, SIM, C4, RUF059`
-      (49 `ARG` + 4 `SIM` + 1 `C4` + 1 `RUF059`, mostly test fixture
-      params — verify before acting).
-- [ ] `health/service.py:206` imports vendored `process_epub` for a
+- [ ] Non-default ruff rules flag 62 findings across `ARG, SIM, C4, RUF059`
+      (54 `ARG001` + 2 `ARG005` + 2 `SIM117` + 1 `SIM102` + 1 `SIM300`
+      + 1 `C416` + 1 `RUF059`, mostly test fixture params — verify
+      before acting).
+- [ ] `health/service.py:265` imports vendored `process_epub` for a
       health check (no execution) — harmless, but add a comment so it is
       not mistaken for a violation of invariant 2.
 
@@ -361,3 +366,54 @@ reached via dynamic `url_for`), all templates and `static/style.css`
    no longer disables existing loggers, every helper and route handler
    annotated, `HealthStats` / `DashboardStats` / `FolderData`
    TypedDicts; 8 new tests.
+
+Steps 1–6 are done. What remains — 2 findings in §2, 5 in §3, 3 in §4
+and 2 in §6 — is planned below: correctness first, then the import
+redesign the test cleanup depends on, then refactors and cosmetics.
+Each step keeps the standing verify gate (`ruff check .` + full
+`pytest`) before its commit.
+
+7. **§3 HTTP correctness** — two API-visible fixes. `login_post` answers
+   `401` for a wrong password instead of `200` (429 and 503 keep their
+   codes); update `test_auth.py` and any doc that states the status. For
+   routing failures, make `create_app`'s app-level fallback run
+   `authenticate()` (skipping `opds.authentication`) *before* building
+   the error document, so `POST /opds/books` is `401` with the
+   Authentication Document without credentials and `405` with the XML
+   document once authenticated — a routed request already behaves that
+   way. Tests in `test_opds.py` for both halves; if the decision goes the
+   other way, write "routing errors are public" into `REFERENCE.md`
+   instead.
+8. **§3 optimizer + progression hardening** — put the `book_id` and file
+   name into both optimizer failure messages
+   (`optimizer/service.py:227-233, 242`) and switch the second to
+   `logger.exception` so the traceback is kept. Add a per-book lock
+   (next to `profile_lock` in `optimizer/locks.py`) around progression's
+   read→compare→write so concurrent PUTs answer `201`/`409` instead of a
+   SQLite busy-timeout `500`. Tests: the log line names the book; two
+   simultaneous PUTs never 500.
+9. **§3 import-time side effects** — move `app = create_app()` out of
+   `bookflow/app.py` into a new `bookflow/wsgi.py` so importing
+   `bookflow.app` reads no env and touches no disk; point the Dockerfile
+   `CMD`, `REFERENCE.md`, `ARCHITECTURE.md` (§4, §12) and `AGENTS.md` at
+   `bookflow.wsgi:app` and refresh the AGENTS "known gotcha".
+   Prerequisite for step 10.
+10. **§4 test robustness** — three fixes: a `skipif(os.geteuid() == 0)`
+    mark on the unreadable-subdirectory test; replace
+    `assert b"never" not in resp.data` with an assertion on the rendered
+    `last_success`; and drop `tests/conftest.py:14`'s import-time
+    `mkdtemp` for a fixture-owned data dir removed at session end — safe
+    only after step 9 made the module import side-effect free.
+11. **§2 templates** — register an `is_admin` Jinja global next to
+    `csrf_token` and use it in `layout.html:16`; extract the shared
+    chunks into `_checks.html` (dashboard/health badge loop),
+    `_breadcrumbs.html` (browse/library crumbs) and a row-block macro for
+    the browse/library folder + book rows. Keep every CSS class and the
+    rendered markup comparable, and the existing template tests green.
+12. **§6 cosmetics** — comment the `process_epub` health import as an
+    importability check only (invariant 2), then re-run
+    `ruff check --select ARG,SIM,C4,RUF059` (62 findings today), fix the
+    real ones (`C416`, `SIM*`, `RUF059`, non-fixture `ARG`), and decide
+    on evidence whether those rule sets join `[tool.ruff.lint] select` —
+    pytest fixture params may argue for leaving `ARG` off or scoping it
+    with `per-file-ignores` instead of churning the tests.
