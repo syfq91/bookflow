@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from flask import Flask, Response, jsonify, redirect, request, url_for
 from werkzeug.exceptions import HTTPException
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from bookflow.admin.routes import bp as admin_bp
 from bookflow.auth.routes import bp as auth_bp
@@ -33,6 +34,15 @@ def create_app(settings: Settings | None = None) -> Flask:
     settings.ensure_directories()
     app.secret_key = resolve_session_secret(settings)
     init_engine(settings)
+
+    if settings.trusted_proxy_hops:
+        # Opt-in: with a reverse proxy in front, every client shares the
+        # proxy's address. Only X-Forwarded-For is honoured, which is what
+        # the login rate limiter keys on. Never enable this when BookFlow
+        # is reachable directly — clients can forge the header.
+        app.wsgi_app = ProxyFix(
+            app.wsgi_app, x_for=settings.trusted_proxy_hops
+        )
 
     app.extensions["password_verifier"] = PasswordVerifier(
         settings.admin_username, settings.admin_password

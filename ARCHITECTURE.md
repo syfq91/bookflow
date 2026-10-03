@@ -103,7 +103,7 @@ bookflow/
 │   │   └── progression.py        OPDS Progression 1.0 GET/PUT
 │   │
 │   ├── optimizer/                device-specific EPUB cache
-│   │   ├── service.py            optimize_book(), clear_optimized_cache()
+│   │   ├── service.py            optimize_book(), cache clear + prune
 │   │   ├── locks.py              per (book_id, profile) threading locks
 │   │   └── epubkit/              vendored pipeline (see NOTICE)
 │   │
@@ -115,7 +115,7 @@ bookflow/
 │   │                             health
 │   └── static/style.css
 │
-└── tests/                        277 tests (see §11)
+└── tests/                        288 tests (see §11)
 ```
 
 Deliberate deviations from the originally sketched layout: every ORM model
@@ -135,14 +135,17 @@ epubkit integration is a package `optimizer/epubkit/` rather than a single
    = 1 MB.
 3. `settings.ensure_directories()` — create `data/` and the x3/x4 cache dirs.
 4. `init_engine(settings)` — process-wide SQLAlchemy engine.
-5. Extensions (kept on `app.extensions`, not globals):
+5. `ProxyFix(x_for=…)` when `OPDS_TRUSTED_PROXY_HOPS` is set — rewrites
+   `request.remote_addr` from `X-Forwarded-For`; skipped entirely (the
+   default) when no trusted proxy is configured.
+6. Extensions (kept on `app.extensions`, not globals):
    - `password_verifier` — Argon2id hash of the configured password,
      built once at startup, used by both admin login and OPDS Basic Auth.
    - `login_rate_limiter` — in-memory failure counter per username.
-6. Jinja global `csrf_token` for form templates.
-7. Register four blueprints: `auth`, `admin`, `opds`, `progression`.
-8. `GET /` → `302` to `/admin/` (convenience redirect for the browser).
-9. `GET /healthz` → `{"status": "ok"}` (public liveness probe).
+7. Jinja global `csrf_token` for form templates.
+8. Register four blueprints: `auth`, `admin`, `opds`, `progression`.
+9. `GET /` → `302` to `/admin/` (convenience redirect for the browser).
+10. `GET /healthz` → `{"status": "ok"}` (public liveness probe).
 
 A module-level `app = create_app()` exists for `gunicorn bookflow.app:app`.
 Tests build apps through the `build_app` fixture factory
@@ -163,6 +166,7 @@ environment variable with a default (see `.env.example`):
 | `OPDS_SESSION_COOKIE_SECURE` | `false` | enable behind HTTPS |
 | `OPDS_SCAN_EXTENSIONS` | `.epub,.pdf,.cbz,.cbr,.mobi,.azw3` | scanner scope |
 | `OPDS_BROWSE_ROOT` | `/` | root the admin folder browser is clamped to (typed paths unaffected) |
+| `OPDS_TRUSTED_PROXY_HOPS` | `0` | reverse proxies in front of the app; `> 0` rewrites `request.remote_addr` from `X-Forwarded-For` (login rate limiter behind a proxy) |
 
 Derived paths: `cache_dir = data/cache/optimized`,
 `x3_cache_dir`/`x4_cache_dir` beneath it. No password is ever stored —
@@ -337,8 +341,17 @@ directory itself is treated as rebuildable.
      `OptimizationError` (→ HTTP `500` XML), never touching the source;
   5. `_record()` upserts the `optimized_books` row.
 - `service.clear_optimized_cache()` — §28 admin action: empties both cache
-  directories (including `.tmp`) and deletes all index rows; returns
-  `(files, rows)`. Sources are never touched; the next download regenerates.
+  directories and deletes all index rows; returns `(files, rows)`. The
+  `.tmp` directory itself is never removed and the scratch file of a
+  generation that is running right now is skipped (it is claimed while
+  `_generate()` works), so a concurrent download still finishes; stale
+  scratch files are swept, and every `<book_id>.epub` is unlinked under
+  its `profile_lock`. Sources are never touched; the next download
+  regenerates.
+- `service.prune_orphaned_cache()` — drops cached EPUBs whose
+  `optimized_books` row is gone (a row-less file is a miss), under the
+  same locks. The admin layer runs it after every scan and after a folder
+  removal, which is where books leave the index.
 - `epubkit/` — vendored copy of
   [b1rdmania/epubkit](https://github.com/b1rdmania/epubkit) (MIT, see
   `NOTICE`): `epub_processor.process_epub(input, output, options, …)` with
@@ -367,7 +380,9 @@ directory itself is treated as rebuildable.
   the FTP-style library browser (folder cards on `/admin/folders` link to
   per-folder directory levels from the index, files link to an
   original-file download), `POST /admin/cache/clear` (flash + redirect),
-  `/admin/health`. Both stats loaders go through
+  `/admin/health`. A scan and a folder removal both finish with
+  `prune_orphaned_cache()`, so cached renditions of books that just left
+  the index do not accumulate. Both stats loaders go through
   `_stats_or_default(load, empty)`, which answers a broken/missing
   database with that page's complete empty shape plus `db_error`, so
   neither template needs its guard to render.
@@ -481,7 +496,11 @@ threads (`check_same_thread=False` + WAL-free default journal).
 
 - one admin credential, Argon2id-hashed in memory, never logged or stored;
 - session cookie: HttpOnly, SameSite=Lax, `Secure` opt-in; CSRF on every
-  state-changing admin request; login rate limiting;
+  state-changing admin request; login rate limiting — five failures per
+  client address + username per ten minutes, in memory and **per process**,
+  keyed on `request.remote_addr`. Behind a reverse proxy set
+  `OPDS_TRUSTED_PROXY_HOPS` (opt-in, default off) so that address comes
+  from the `X-Forwarded-For` entry the trusted proxy added;
 - downloads only for books that exist in the index, and only inside their
   folder root (`resolve()` + `is_relative_to`);
 - output paths are derived from `book_id` + profile — never from raw URL
@@ -492,7 +511,7 @@ threads (`check_same_thread=False` + WAL-free default journal).
 
 ## 11. Testing
 
-`tests/` (277 tests, `uv run pytest`):
+`tests/` (288 tests, `uv run pytest`):
 
 - `conftest.py` — temp `Settings` (fresh data dir + SQLite per test), the
   `build_app` factory (runs `alembic upgrade head` unless `migrate=False`,
@@ -528,11 +547,12 @@ needs write access. The cache directory is disposable: clearing it (UI
 button or `rm -rf`) costs only regeneration time on the next device
 download.
 
-For containers, `Dockerfile` + `docker-compose.yml` run the same stack,
+For containers, `Dockerfile` + `compose.yml` run the same stack,
 either from the published `ghcr.io/syfq91/bookflow:latest` image or a
 local two-stage build (uv sync → slim runtime, non-root user): a read-only
 library bind mount at `/library` (`./library` by default), a named volume
 for `/app/data`, automatic `alembic upgrade head` at start, and a
-`/healthz` healthcheck. Settings are literals in `docker-compose.yml` —
-`OPDS_ADMIN_PASSWORD` is the one to set, everything else is commented out
-and falls back to the app default; `.env` is not read for interpolation.
+`/healthz` healthcheck. Settings are literals in `compose.yml` —
+`OPDS_ADMIN_PASSWORD` is the one to set (it ships empty on purpose: no
+default credential), everything else is commented out and falls back to
+the app default; `.env` is not read for interpolation.

@@ -18,7 +18,7 @@ from bookflow.library.scanner import scan_folder
 from bookflow.library.service import add_folder
 from bookflow.optimizer import service as optimizer_service
 from bookflow.optimizer.locks import profile_lock
-from bookflow.optimizer.service import optimize_book
+from bookflow.optimizer.service import clear_optimized_cache, optimize_book
 from factories import csrf_token, insert_books, login_admin, make_epub, make_pdf
 
 PASSWORD = "opds-pass"
@@ -393,8 +393,11 @@ def test_cache_clear_removes_files_and_rows(
         for directory in (settings.x3_cache_dir, settings.x4_cache_dir)
         if directory.is_dir()
         for entry in directory.iterdir()
+        if entry.name != ".tmp"
     ]
     assert leftover == []
+    scratch = settings.x3_cache_dir / ".tmp"
+    assert not scratch.exists() or list(scratch.iterdir()) == []
     assert source.read_bytes() == source_bytes
 
     follow = client.get(resp.headers["Location"])
@@ -417,3 +420,117 @@ def test_download_regenerates_after_cache_clear(
     assert again.status_code == 200
     assert again.data[:2] == b"PK"
     assert len(_optimized_rows(book_id)) == 1
+
+
+def test_cache_clear_sweeps_stale_scratch(client, app, folder_id, root) -> None:
+    settings = app.config["SETTINGS"]
+    stale = settings.x3_cache_dir / ".tmp" / "leftover.epub"
+    stale.parent.mkdir(parents=True, exist_ok=True)
+    stale.write_bytes(b"stale")
+
+    login_admin(client, password=PASSWORD)
+    resp = _clear_cache(client)
+
+    assert resp.status_code == 302
+    assert not stale.exists()
+    # The scratch directory itself stays: removing it would race the
+    # window between a generation creating it and claiming its file.
+    assert stale.parent.is_dir()
+
+
+def test_cache_clear_spares_in_flight_scratch(
+    app, folder_id, root, monkeypatch
+) -> None:
+    book_id, source = _library_book(root, folder_id)
+    started = threading.Event()
+    release = threading.Event()
+    original = optimizer_service.process_epub
+
+    def slow(source_path, output_path, **kwargs):
+        scratch = Path(output_path)
+        scratch.parent.mkdir(parents=True, exist_ok=True)
+        scratch.write_bytes(b"in-flight")
+        started.set()
+        if not release.wait(timeout=60):
+            raise RuntimeError("test never released the optimizer")
+        if not scratch.is_file():
+            raise RuntimeError("clear removed a scratch file mid-generation")
+        return original(source_path, output_path, **kwargs)
+
+    monkeypatch.setattr(optimizer_service, "process_epub", slow)
+    failures: list[Exception] = []
+
+    def worker():
+        try:
+            with app.app_context():
+                optimize_book(book_id, "x4", source)
+        except Exception as exc:
+            failures.append(exc)
+
+    thread = threading.Thread(target=worker)
+    thread.start()
+    assert started.wait(timeout=60)
+
+    # The cache is cold, so clearing cannot block on the generation's lock:
+    # only the claimed scratch file stands in the way, and it is skipped.
+    with app.app_context():
+        clear_optimized_cache()
+
+    release.set()
+    thread.join(timeout=60)
+
+    assert not thread.is_alive()
+    assert failures == []
+    assert (app.config["SETTINGS"].x4_cache_dir / f"{book_id}.epub").is_file()
+
+
+# --- cache pruning on delete ------------------------------------------------
+
+
+def test_scan_prunes_cache_files_of_removed_books(
+    client, app, folder_id, root
+) -> None:
+    make_epub(root / "dune.epub", title="Dune", authors=("Frank Herbert",))
+    make_epub(root / "messiah.epub", title="Dune Messiah")
+    _scan(folder_id)
+    removed, kept = _book_ids()
+    settings = app.config["SETTINGS"]
+    for book_id in (removed, kept):
+        assert _get(client, f"/opds/x3/download/{book_id}").status_code == 200
+    removed_file = settings.x3_cache_dir / f"{removed}.epub"
+    kept_file = settings.x3_cache_dir / f"{kept}.epub"
+    assert removed_file.is_file() and kept_file.is_file()
+
+    (root / "dune.epub").unlink()
+    login_admin(client, password=PASSWORD)
+    resp = client.post(
+        f"/admin/folders/{folder_id}/scan",
+        data={"csrf_token": csrf_token(client)},
+    )
+
+    assert resp.status_code == 302
+    assert not removed_file.exists()
+    assert _optimized_rows(removed) == []
+    assert kept_file.is_file()
+    assert len(_optimized_rows(kept)) == 1
+
+
+def test_folder_delete_prunes_cache_files(
+    client, app, folder_id, root
+) -> None:
+    book_id, source = _library_book(root, folder_id)
+    settings = app.config["SETTINGS"]
+    assert _get(client, f"/opds/x3/download/{book_id}").status_code == 200
+    cache_file = settings.x3_cache_dir / f"{book_id}.epub"
+    assert cache_file.is_file()
+
+    login_admin(client, password=PASSWORD)
+    resp = client.post(
+        f"/admin/folders/{folder_id}/delete",
+        data={"csrf_token": csrf_token(client)},
+    )
+
+    assert resp.status_code == 302
+    assert not cache_file.exists()
+    assert _optimized_rows(book_id) == []
+    assert source.exists()

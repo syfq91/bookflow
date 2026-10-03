@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import pytest
+
 from bookflow.config import Settings, resolve_session_secret
 
 
@@ -70,6 +72,32 @@ def test_browse_root_env_override(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("OPDS_BROWSE_ROOT", str(tmp_path / "media"))
 
     assert Settings.from_env().browse_root == (tmp_path / "media").resolve()
+
+
+def test_trusted_proxy_hops_defaults_off(monkeypatch, tmp_path: Path) -> None:
+    for key in list(os.environ):
+        if key.startswith("OPDS_"):
+            monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("OPDS_DATA_DIR", str(tmp_path / "data"))
+
+    assert Settings.from_env().trusted_proxy_hops == 0
+
+
+def test_trusted_proxy_hops_env_override(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("OPDS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("OPDS_TRUSTED_PROXY_HOPS", "2")
+
+    assert Settings.from_env().trusted_proxy_hops == 2
+
+
+@pytest.mark.parametrize("value", ["", "nope", "-3"])
+def test_trusted_proxy_hops_unusable_values_stay_off(
+    monkeypatch, tmp_path: Path, value: str
+) -> None:
+    monkeypatch.setenv("OPDS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("OPDS_TRUSTED_PROXY_HOPS", value)
+
+    assert Settings.from_env().trusted_proxy_hops == 0
 
 
 def test_derived_cache_paths(tmp_path: Path) -> None:

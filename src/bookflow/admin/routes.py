@@ -32,7 +32,7 @@ from bookflow.library.service import (
     list_folders,
     remove_folder,
 )
-from bookflow.optimizer.service import clear_optimized_cache
+from bookflow.optimizer.service import clear_optimized_cache, prune_orphaned_cache
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -117,6 +117,7 @@ def folder_delete(folder_id: int):
     if folder is None:
         abort(404)
     remove_folder(folder_id)
+    prune_orphaned_cache()
     flash(
         f"Removed {folder['path']} from BookFlow. Library files were not changed.",
         "ok",
@@ -285,6 +286,7 @@ def _scan_and_respond(folder_id: int | None, path: str | None):
     except ScanInProgress:
         flash("A scan for this folder is already in progress.", "error")
         return _folders_response(), 409
+    prune_orphaned_cache()
     flash(
         _scan_message(path, result),
         "ok" if result.status == "ok" else "error",

@@ -22,6 +22,17 @@ def _env_bool(name: str, default: bool) -> bool:
     return value.strip().lower() in ("1", "true", "yes", "on")
 
 
+def _env_int(name: str, default: int) -> int:
+    """Read a non-negative integer setting; unusable values fall back."""
+    value = os.environ.get(name)
+    if value is None or value == "":
+        return default
+    try:
+        return max(int(value.strip()), 0)
+    except ValueError:
+        return default
+
+
 DEFAULT_SCAN_EXTENSIONS = (".epub", ".pdf", ".cbz", ".cbr", ".mobi", ".azw3")
 
 
@@ -53,6 +64,7 @@ class Settings:
     session_cookie_secure: bool = False
     scan_extensions: tuple[str, ...] = DEFAULT_SCAN_EXTENSIONS
     browse_root: Path = Path("/")
+    trusted_proxy_hops: int = 0
 
     @property
     def cache_dir(self) -> Path:
@@ -87,6 +99,7 @@ class Settings:
             browse_root=(
                 Path(_env("OPDS_BROWSE_ROOT", "/")).expanduser().resolve()
             ),
+            trusted_proxy_hops=_env_int("OPDS_TRUSTED_PROXY_HOPS", 0),
         )
 
     def ensure_directories(self) -> None:

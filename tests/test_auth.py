@@ -277,3 +277,53 @@ def test_rate_limiter_reset_clears_failures() -> None:
     limiter.reset(key)
 
     assert not limiter.is_blocked(key)
+
+
+# --- rate limiting behind a reverse proxy -----------------------------------
+
+
+def _failed_login(client, headers: dict[str, str]) -> int:
+    resp = client.post(
+        "/admin/login",
+        data={
+            "csrf_token": csrf_token(client),
+            "username": "admin",
+            "password": "wrong",
+        },
+        headers=headers,
+    )
+    return resp.status_code
+
+
+def test_rate_limit_ignores_forwarded_header_by_default(client, app) -> None:
+    forwarded = {"X-Forwarded-For": "203.0.113.7"}
+
+    for _ in range(5):
+        assert _failed_login(client, forwarded) == 200
+    assert _failed_login(client, forwarded) == 429
+
+    limiter = app.extensions["login_rate_limiter"]
+    assert limiter.is_blocked(("127.0.0.1", "admin"))
+    assert not limiter.is_blocked(("203.0.113.7", "admin"))
+
+
+def test_rate_limit_keys_on_forwarded_client_when_proxy_trusted(
+    build_app, auth_settings: Settings
+) -> None:
+    application = build_app(
+        replace(auth_settings, trusted_proxy_hops=1), migrate=False
+    )
+    client = application.test_client()
+    first = {"X-Forwarded-For": "203.0.113.7"}
+    second = {"X-Forwarded-For": "203.0.113.8"}
+
+    for _ in range(5):
+        assert _failed_login(client, first) == 200
+
+    assert _failed_login(client, first) == 429
+    assert _failed_login(client, second) == 200
+
+    limiter = application.extensions["login_rate_limiter"]
+    assert limiter.is_blocked(("203.0.113.7", "admin"))
+    assert not limiter.is_blocked(("203.0.113.8", "admin"))
+    assert not limiter.is_blocked(("127.0.0.1", "admin"))

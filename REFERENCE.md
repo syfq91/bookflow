@@ -18,6 +18,7 @@ All settings come from environment variables (defaults in parentheses):
 | `OPDS_SESSION_COOKIE_SECURE` | `false`    | Set the session cookie `Secure` flag (behind HTTPS) |
 | `OPDS_SCAN_EXTENSIONS`      | `.epub,.pdf,.cbz,.cbr,.mobi,.azw3` | Comma-separated extensions the scanner indexes |
 | `OPDS_BROWSE_ROOT`          | `/`         | Root the admin folder browser (`Browse…` on Add Folder) is clamped to; typed paths are unaffected |
+| `OPDS_TRUSTED_PROXY_HOPS`   | `0`         | Reverse proxies in front of BookFlow; `> 0` takes the client address from `X-Forwarded-For` (see below) |
 
 `.env.example` documents the same variables for a bare-metal install.
 
@@ -28,6 +29,20 @@ redirects to `/admin/`). Admin routes require a session; the OPDS routes
 use HTTP Basic Auth with the same credentials. Without
 `OPDS_ADMIN_PASSWORD` login attempts and the OPDS catalog return `503`
 (the login form itself still renders).
+
+**Login rate limiting.** Five failed logins for the same client address
+and username inside ten minutes answer `429` until the window slides past
+them; a successful login clears the count. Counters are in memory, so
+they reset on restart and are **per process** — with `GUNICORN_WORKERS=2`
+each worker keeps its own, so the effective threshold is per worker. The
+key is `request.remote_addr`. Behind a reverse proxy every client shares
+the proxy's address, which would let one attacker lock everyone out: set
+`OPDS_TRUSTED_PROXY_HOPS` to the number of proxies in front of BookFlow
+(`1` for a single nginx/Caddy) so the address is taken from the last
+`X-Forwarded-For` entry that proxy added. Leave it at the default `0`
+when BookFlow is reachable directly — clients can forge that header, and
+only enable it when every direct path to the app is blocked by the
+proxy.
 
 The dashboard shows books, folders, library size, last scan, optimization
 cache sizes and health badges. `/admin/health` runs per-component checks
@@ -114,7 +129,10 @@ scans or startup — using a vendored copy of the
 under `data/cache/optimized/{x3,x4}/` and rebuilt automatically when the
 source file changes. The original library files are never modified. The
 dashboard's **Clear cache** action empties the cache and its index rows;
-the next X3/X4 download regenerates the EPUB on demand.
+the next X3/X4 download regenerates the EPUB on demand. A scan or a
+folder removal also drops the cached renditions of the books that left
+the index, and clearing never disturbs a download that is being optimized
+at that moment.
 
 ### Reading progression (OPDS Progression 1.0)
 
@@ -249,20 +267,21 @@ To build from source instead (the `Dockerfile` at the repo root):
 docker compose up -d --build
 ```
 
-Configuration lives in `docker-compose.yml` itself — no `.env` step, no
-`${...}` interpolation. Before the first start, set `OPDS_ADMIN_PASSWORD`
-(otherwise OPDS returns `503` and admin login is locked) and point the
-library bind at your books:
+Configuration lives in `compose.yml` itself — no `.env` step, no
+`${...}` interpolation. `OPDS_ADMIN_PASSWORD` ships **empty**: no default
+credential is shipped, so an unedited deployment cannot be logged into.
+Before the first start set it there (otherwise OPDS returns `503` and
+admin login is locked) and point the library bind at your books:
 
 ```yaml
 environment:
-  OPDS_ADMIN_PASSWORD: change-me
+  OPDS_ADMIN_PASSWORD: your-secret
 volumes:
   - bookflow-data:/app/data
   - /srv/books:/library:ro
 ```
 
-Every other setting is commented out in `docker-compose.yml` and falls back
+Every other setting is commented out in `compose.yml` and falls back
 to the app defaults: the session secret is generated into the data volume on
 first start, the scan extensions and worker count use their defaults.
 

@@ -1,9 +1,10 @@
 # AUDITS.md
 
-Open findings from a codebase audit (2026-09-30, refreshed 2026-10-02):
+Open findings from a codebase audit (2026-09-30, refreshed 2026-10-03):
 dead code, refactor candidates and best-practice gaps. Section 1 is
 cleared (2026-09-30); twelve items in §2/§3 and two in §4 were cleared
-2026-10-02. Tick items off as they land; delete entries once resolved.
+2026-10-02, three more in §3 on 2026-10-03. Tick items off as they land;
+delete entries once resolved.
 
 Scope: `src/bookflow/**`, `tests/**`, docs and deploy files. Vendored
 `src/bookflow/optimizer/epubkit/` was excluded. Every finding was verified
@@ -168,38 +169,47 @@ reached via dynamic `url_for`), all templates and `static/style.css`
       `src/bookflow/auth/routes.py:75-82` — 429/503/400 are used
       correctly elsewhere, so 200 makes success indistinguishable from
       failure for scripts and monitoring. Return 401 (or 422).
-- [ ] **Rate limiter keyed on `request.remote_addr` with no proxy
-      awareness** `src/bookflow/auth/routes.py:43`; no `ProxyFix`
-      anywhere. Behind a documented reverse-proxy deployment every client
-      shares one IP, so one attacker failing logins locks *everyone* out
-      of `/admin/login` for 10 minutes (self-DoS). Document that the
-      limiter is per-process/per-IP and add an opt-in trusted-proxy
-      setting.
-- [ ] **`OPDS_ADMIN_PASSWORD: change-me` ships in `docker-compose.yml:14`**
-      Now that `ghcr.io/syfq91/bookflow:latest` is published, an
-      unedited `docker compose up` exposes UI + OPDS catalog with a
-      guessable credential. Prefer leaving it unset (the app already
-      locks login/returns 503) or requiring it from the environment.
-- [ ] **Cache hygiene vs invariant 4**
-      - Deleting books/folders removes `optimized_books` rows
-        (`library/scanner.py:205-207`,
-        `library/service.py:80-85`) but never the `.epub` files, so
-        files accumulate (correctness holds — a row-less file is a miss —
-        but `clear_optimized_cache()`'s file/row counts drift). Unlink
-        `<book_id>.epub` on delete under `profile_lock`, or reconcile on
-        clear.
-      - `clear_optimized_cache()` (`optimizer/service.py:64-69`)
-        rmtree's profile dirs including `.tmp/` (`service.py:114`) while
-        `_generate()` may be writing there, without taking any
-        `profile_lock` — the later `os.replace()` (`service.py:132`)
-        then fails and the concurrent download 500s. Skip `.tmp` (and
-        sweep it separately) or gate on the locks.
+- [x] **Rate limiter keyed on `request.remote_addr` with no proxy
+      awareness** — **resolved (2026-10-03)**: `OPDS_TRUSTED_PROXY_HOPS`
+      (`Settings.trusted_proxy_hops`, default `0`) wraps `app.wsgi_app`
+      in werkzeug's `ProxyFix(x_for=…)` only when set, so behind one
+      trusted proxy the limiter keys on the client address that proxy
+      appended to `X-Forwarded-For`. `REFERENCE.md` documents that the
+      limiter is per-process/per-IP (5 failures / 10 min, per worker,
+      reset on restart) and that the setting must stay off when BookFlow
+      is reachable directly — clients can forge the header.
+      `.env.example` documents the variable. Tests: the header is ignored
+      by default; with `hops=1` one forwarded client is blocked while
+      another is not.
+- [x] **`OPDS_ADMIN_PASSWORD: change-me` ships in `docker-compose.yml:14`**
+      — **resolved (2026-10-03)**: `compose.yml` ships the key as `""`
+      with a comment stating why no default is shipped, so an unedited
+      `docker compose up` runs with login locked and OPDS at `503`
+      instead of a guessable credential. README/REFERENCE/.env.example
+      already say to set it before first start; the stale
+      `docker-compose.yml` references in those docs were corrected to
+      `compose.yml`.
+- [x] **Cache hygiene vs invariant 4** — **resolved (2026-10-03)**:
+      `prune_orphaned_cache()` in `optimizer/service.py` unlinks
+      `<book_id>.epub` files whose `optimized_books` row is gone (a
+      row-less file is a miss), each under its `profile_lock`; the admin
+      layer runs it after every scan (`_scan_and_respond`) and after
+      `remove_folder` (`folder_delete`) — the two places books leave the
+      index — so files no longer accumulate and clear's file/row counts
+      agree. `clear_optimized_cache()` no longer `rmtree`s `.tmp`:
+      `_generate()` claims its scratch file in `_scratch_running`,
+      `_sweep_scratch()` spares claimed entries (stale ones are swept) and
+      the `.tmp` directory itself is kept, so a concurrent download's
+      `os.replace()` cannot fail; `<book_id>.epub` files are unlinked
+      under the profile lock too. Tests: scan prune keeps a sibling's
+      cache, folder-delete prune, clear spares an in-flight generation,
+      clear sweeps stale scratch.
 - [ ] **Optimizer failure logs omit the book id**
-      `src/bookflow/optimizer/service.py:124-128, 138` — `"optimization
+      `src/bookflow/optimizer/service.py:226-232, 242` — `"optimization
       failed for %s profile"` names only the profile. Add `book_id`/file
-      name; consider `logger.exception` at `:136`.
+      name; consider `logger.exception` at `:242`.
 - [ ] **Module-level `app = create_app()` at import time**
-      `src/bookflow/app.py:56` reads env, creates `data/`, persists the
+      `src/bookflow/app.py:90` reads env, creates `data/`, persists the
       session secret and initializes the engine on import (already a
       documented gotcha — `tests/conftest.py` has to `mkdtemp` at import
       time). Consider a `bookflow/wsgi.py` factory target so importing
@@ -285,7 +295,7 @@ reached via dynamic `url_for`), all templates and `static/style.css`
   single credential, no secrets in logs; vendored epubkit untouched.
 - `os.environ` is read only in `config.py`.
 - `ruff check .` passes; `F401`/`F811` clean; no commented-out code, no
-  `TODO`/`FIXME`, no unreachable branches; test suite clean (277 tests).
+  `TODO`/`FIXME`, no unreachable branches; test suite clean (288 tests).
 - No queries in Jinja templates; no N+1 (`list_folders`,
   `library_statistics`, `_query_stats` are aggregate; `get_folder` is a
   fixed two-query lookup and `book_file()` one row).
@@ -318,6 +328,10 @@ reached via dynamic `url_for`), all templates and `static/style.css`
    answers a missing database with each page's complete shape;
    `get_folder()` reads a single row through the shared `_folder_data()`
    builder.
-5. **§3 cache hygiene + security items** (`change-me` password, proxy-
-   aware limiter).
+5. ~~§3 cache hygiene + security items~~ **done (2026-10-03)** —
+   `prune_orphaned_cache()` runs after every scan and folder removal,
+   cache clear spares in-flight scratch files and unlinks under the
+   profile locks; `compose.yml` ships an empty `OPDS_ADMIN_PASSWORD` (no
+   guessable default); `OPDS_TRUSTED_PROXY_HOPS` + `ProxyFix` make the
+   login limiter proxy-aware, documented in `REFERENCE.md`.
 6. **§3 logging, §5 typing** — good first-issue batch.
