@@ -1,0 +1,64 @@
+{% extends "layout.html" %}
+
+{% block title %}Users · BookFlow{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Users</h1>
+  <a class="button" href="{{ url_for('admin.user_new') }}">Add User</a>
+</div>
+
+<section class="card">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Username</th>
+        <th>Role</th>
+        <th>Created</th>
+        <th>Books Tracked</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for user in users %}
+      <tr>
+        <td><strong>{{ user.username }}</strong></td>
+        <td>
+          {% if user.is_admin %}
+          <span class="badge badge-ok">Admin</span>
+          {% else %}
+          <span class="badge badge-muted">Reader</span>
+          {% endif %}
+        </td>
+        <td>{{ user.created_at.strftime('%Y-%m-%d %H:%M') if user.created_at else '—' }}</td>
+        <td>{{ user.progression_count }}</td>
+        <td>
+          <div class="folder-actions">
+            <details class="inline">
+              <summary class="button secondary" style="cursor: pointer; padding: 0.3rem 0.6rem; font-size: 0.85rem;">Password</summary>
+              <form method="post" action="{{ url_for('admin.user_change_password', user_id=user.id) }}" style="margin-top: 0.5rem; display: flex; gap: 0.5rem; align-items: center;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                <input type="password" name="password" placeholder="New password" required minlength="8" style="padding: 0.3rem 0.5rem; font-size: 0.85rem; width: 12rem;" />
+                <button type="submit" style="margin-top: 0; padding: 0.3rem 0.6rem; font-size: 0.85rem;">Save</button>
+              </form>
+            </details>
+
+            {% if user.id != current_user_id %}
+            <form
+              method="post"
+              action="{{ url_for('admin.user_delete', user_id=user.id) }}"
+              class="inline danger"
+              onsubmit="return confirm('Delete user {{ user.username }}? Their reading progression will also be deleted.');"
+            >
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+              <button type="submit" class="secondary" style="margin-top: 0; padding: 0.3rem 0.6rem; font-size: 0.85rem;">Delete</button>
+            </form>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

@@ -19,6 +19,7 @@ from bookflow.database.models import (
     LibraryFolder,
     OptimizedBook,
     Progression,
+    User,
 )
 
 
@@ -29,6 +30,14 @@ class HealthCheck:
     component: str
     status: str  # "ok" | "warn" | "error"
     detail: str
+
+
+class UserStats(TypedDict):
+    """Counts of total, admin, and reader accounts."""
+
+    total: int
+    admins: int
+    readers: int
 
 
 class FormatStats(TypedDict):
@@ -99,6 +108,7 @@ class HealthStats(TypedDict):
     cache: dict[str, CacheProfile]
     progression: ProgressionStats
     scanner: ScannerStats
+    users: UserStats
     db_error: NotRequired[str]
 
 
@@ -220,6 +230,19 @@ def library_statistics() -> HealthStats:
                 "duration": last_ok.last_scan_duration,
             }
 
+        total_users = int(session.scalar(select(func.count(User.id))) or 0)
+        admin_users = int(
+            session.scalar(
+                select(func.count(User.id)).where(User.is_admin.is_(True))
+            )
+            or 0
+        )
+        user_stats: UserStats = {
+            "total": total_users,
+            "admins": admin_users,
+            "readers": total_users - admin_users,
+        }
+
     return {
         "total_books": total_books,
         "total_size": total_size,
@@ -228,6 +251,7 @@ def library_statistics() -> HealthStats:
         "cache": cache,
         "progression": progression,
         "scanner": {"last_success": last_success, "errors": errors},
+        "users": user_stats,
     }
 
 

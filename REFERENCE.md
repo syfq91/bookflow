@@ -32,12 +32,13 @@ events; `DEBUG` adds the per-file metadata messages.
 ## Admin UI
 
 Set `OPDS_ADMIN_PASSWORD` and open `/admin/login` (the site root `/`
-redirects to `/admin/`). Admin routes require a session; the OPDS routes
-use HTTP Basic Auth with the same credentials. Without
-`OPDS_ADMIN_PASSWORD` login attempts and the OPDS catalog return `503`
-(the login form itself still renders). A wrong username or password
-returns `401` with the login form and an inline error — `429` (rate
-limit) and `503` (unset password) are the only other failure codes.
+redirects to `/admin/`). Admin routes require a session (admin accounts
+only); the OPDS routes use HTTP Basic Auth with user credentials (admins
+and readers). Without `OPDS_ADMIN_PASSWORD` login attempts and the OPDS
+catalog return `503` (the login form itself still renders). A wrong
+username or password returns `401` with the login form and an inline
+error — `403` (reader attempting admin login), `429` (rate limit) and
+`503` (unset password) are the only other failure codes.
 
 **Login rate limiting.** Five failed logins for the same client address
 and username inside ten minutes answer `429` until the window slides past
@@ -81,9 +82,22 @@ folder indexes it immediately, and **Scan** re-indexes it:
   `error` until it returns
 - concurrent scans of the same folder are rejected with `409`
 
+### Users
+
+Manage user accounts under **Users** (`/admin/users`). Administrators
+can:
+
+- create new user accounts as **Reader** or **Admin**
+- reset user passwords
+- remove accounts (with protection against self-deletion and deleting the
+  last remaining admin)
+
+Reader accounts access the OPDS catalog and sync reading progression, but
+cannot access the `/admin` interface.
+
 ## OPDS catalog
 
-Point any OPDS client at `/opds` using the admin credentials (HTTP Basic).
+Point any OPDS client at `/opds` using HTTP Basic authentication.
 All catalog responses are Atom/OPDS XML and so are their errors, for every
 status — including `405` from a wrong method and `500` from a server
 fault. The progression endpoints under `/opds/publications` answer with
@@ -154,8 +168,8 @@ at that moment.
 
 Reading positions sync through OPDS Progression 1.0 at
 `/opds/publications/<id>/progression`. There is exactly **one position per
-logical book**, shared by the original file and that book's X3/X4 downloads;
-the optimization profile never affects it.
+user per logical book**, shared by the original file and that book's X3/X4
+downloads; the optimization profile never affects it.
 
 **Discovery.** Every acquisition entry links to its own position with
 `rel="http://opds-spec.org/progression"` and

@@ -9,7 +9,7 @@ request flows, and the invariants every change must preserve.
 ## 1. Overview
 
 BookFlow turns existing filesystem folders into a self-hosted OPDS catalog
-with on-demand device optimization and single-user reading progression.
+with on-demand device optimization and multi-user reading progression.
 
 ```text
                  READ ONLY
@@ -41,9 +41,10 @@ Three rules define the system:
 2. **Optimization is strictly on-demand.** Only a request to
    `/opdsx3/download/<id>` or `/opdsx4/download/<id>` may invoke the
    epubkit pipeline — never scanning, startup, or background jobs.
-3. **Single user, single surface.** One admin (session cookie for `/admin`,
-   HTTP Basic for `/opds`, `/opdsx3` and `/opdsx4`), one progression per
-   book regardless of which download URL the reader used.
+3. **Multi-user authentication, single surface.** Admin and reader users in
+   SQLite (session cookie for `/admin`, HTTP Basic for `/opds`, `/opdsx3`
+   and `/opdsx4`), with reading progression tracked per user per book
+   regardless of which download URL the reader used.
 
 ## 2. Technology
 
@@ -52,7 +53,7 @@ Three rules define the system:
 | Web          | Flask 3 (application factory, blueprints)           |
 | Templates    | Jinja2 (server-rendered admin UI)                   |
 | Persistence  | SQLAlchemy 2 ORM + SQLite, Alembic migrations       |
-| Passwords    | argon2-cffi (Argon2id, in-memory hash of the env password) |
+| Passwords    | argon2-cffi (Argon2id, SQLite stored password hashes) |
 | EPUB parse   | stdlib `zipfile` + `xml.etree`                      |
 | PDF parse    | pypdf                                               |
 | Optimization | vendored epubkit pipeline (Pillow, lxml, cssutils)  |
@@ -193,25 +194,33 @@ the env value is Argon2id-hashed in memory at startup.
 - Schema changes go through Alembic (`migrations/versions/`); models are
   verified against migrations in `tests/test_database.py`.
 
-### Schema (migrations `0001`, `0002`, `0003`)
+### Schema (migrations `0001`, `0002`, `0003`, `0004`)
 
 ```text
-library_folders                     books
+users                               books
 ├── id (PK)                         ├── id (PK)
-├── path (unique, 4096)             ├── folder_id (FK → library_folders, CASCADE)
-├── name                             ├── relative_path (unique per folder)
-├── created_at, updated_at          ├── title, authors (index), publisher,
-└── last_scan_at/duration/…           isbn, description, series
+├── username (UNIQUE)               ├── folder_id (FK → library_folders, CASCADE)
+├── password_hash                   ├── relative_path (unique per folder)
+├── is_admin                        ├── title, authors (index), publisher,
+└── created_at                      │   isbn, description, series
                                     ├── file_format, file_size, file_modified_at
-progressions (1:1 with books)       └── created_at (index), updated_at
-├── id (PK), book_id (UNIQUE, FK)
-├── progression (float 0..1)        optimized_books
-├── modified (datetime)             ├── id (PK)
-├── device_id, device_name          ├── book_id (FK, CASCADE)
-├── title, references (JSON)        ├── profile ('x3' | 'x4')
-└── created_at, updated_at          ├── source_mtime, source_size   ← validity
-                                    ├── optimized_size
-                                    └── UNIQUE (book_id, profile)
+library_folders                     └── created_at (index), updated_at
+├── id (PK)
+├── path (unique, 4096)             optimized_books
+├── name                            ├── id (PK)
+├── created_at, updated_at          ├── book_id (FK, CASCADE)
+└── last_scan_at/duration/…          ├── profile ('x3' | 'x4')
+                                    ├── source_mtime, source_size   ← validity
+progressions (per user + book)      ├── optimized_size
+├── id (PK)                         └── UNIQUE (book_id, profile)
+├── user_id (FK → users, CASCADE)
+├── book_id (FK → books, CASCADE)
+├── progression (float 0..1)
+├── modified (datetime)
+├── device_id, device_name
+├── title, references (JSON)
+├── created_at, updated_at
+└── UNIQUE (user_id, book_id)
 ```
 
 `books.folder_id + relative_path` is unique; absolute paths are never
@@ -335,8 +344,8 @@ directory itself is treated as rebuildable.
   - errors are RFC 7807 `application/problem+json` with registry types
     (`…#progression-invalid-payload`, `…#progression-date`, `about:blank`
     for 404 and any other status);
-  - one `progressions` row per book — progression belongs to the logical
-    book, never to a cache profile.
+  - one `progressions` row per user per book — progression belongs to the
+    logical book and user, never to a cache profile.
 
 ### 7.4 `optimizer/` — on-demand device EPUBs
 

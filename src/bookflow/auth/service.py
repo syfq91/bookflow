@@ -2,53 +2,137 @@
 
 from __future__ import annotations
 
+import contextlib
 import hmac
 import secrets
 import threading
 import time
 from collections import deque
 from collections.abc import Callable
+from dataclasses import dataclass
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
 from flask import request, session
+from sqlalchemy import func, select
+from sqlalchemy.exc import SQLAlchemyError
+
+from bookflow.database.database import session_scope
+from bookflow.database.models import User
 
 ADMIN_SESSION_KEY = "admin"
+USER_ID_SESSION_KEY = "user_id"
+USERNAME_SESSION_KEY = "username"
 CSRF_SESSION_KEY = "csrf_token"
 
 DEFAULT_MAX_FAILURES = 5
 DEFAULT_WINDOW_SECONDS = 600.0
 
 
-class PasswordVerifier:
-    """Verify logins against a single admin username/password pair.
+@dataclass(frozen=True)
+class AuthenticatedUser:
+    """Decoupled user context attached to request g."""
 
-    The password is hashed with Argon2id at construction time; only the hash
-    is retained. Plaintext credentials are never stored in the database.
-    """
+    id: int
+    username: str
+    is_admin: bool
 
-    def __init__(self, username: str, password: str) -> None:
-        self._username = username
-        self._configured = bool(password)
-        self._hash = PasswordHasher().hash(password) if password else ""
+
+class DatabasePasswordVerifier:
+    """Verifies credentials in SQLite with timing attack mitigation."""
+
+    def __init__(
+        self,
+        admin_username: str = "admin",
+        admin_password: str = "",
+        hasher: PasswordHasher | None = None,
+    ) -> None:
+        self._hasher = hasher or PasswordHasher()
+        self._admin_username = admin_username
+        self._admin_password = admin_password
+        self._admin_hash = self._hasher.hash(admin_password) if admin_password else ""
+        self._dummy_hash = self._hasher.hash("bookflow-timing-defense")
 
     @property
     def configured(self) -> bool:
-        """Whether an admin password has been supplied."""
-        return self._configured
+        """Whether an admin password or at least one user account exists."""
+        if self._admin_password:
+            return True
+        try:
+            with session_scope() as session:
+                return bool(session.scalar(select(func.count(User.id))))
+        except SQLAlchemyError:
+            return False
+
+    def verify_user(self, username: str, password: str) -> AuthenticatedUser | None:
+        """Verify username and password, returning an AuthenticatedUser if valid."""
+        clean_username = username.strip() if username else ""
+        if not clean_username or not password:
+            with contextlib.suppress(Exception):
+                self._hasher.verify(self._dummy_hash, "dummy")
+            return None
+
+        # Try SQLite database
+        try:
+            with session_scope() as session:
+                user = session.scalar(
+                    select(User).where(User.username == clean_username)
+                )
+                if user is not None:
+                    try:
+                        self._hasher.verify(user.password_hash, password)
+                        return AuthenticatedUser(
+                            id=user.id,
+                            username=user.username,
+                            is_admin=user.is_admin,
+                        )
+                    except (InvalidHashError, VerificationError):
+                        if (
+                            user.is_admin
+                            and self._admin_password
+                            and hmac.compare_digest(
+                                self._admin_username.encode(), clean_username.encode()
+                            )
+                            and hmac.compare_digest(
+                                self._admin_password.encode(), password.encode()
+                            )
+                        ):
+                            user.password_hash = self._hasher.hash(
+                                self._admin_password
+                            )
+                            return AuthenticatedUser(
+                                id=user.id,
+                                username=user.username,
+                                is_admin=user.is_admin,
+                            )
+                        return None
+        except SQLAlchemyError:
+            pass
+
+        # Fallback when database tables are missing
+        if (
+            self._admin_password
+            and hmac.compare_digest(
+                self._admin_username.encode(), clean_username.encode()
+            )
+            and hmac.compare_digest(
+                self._admin_password.encode(), password.encode()
+            )
+        ):
+            return AuthenticatedUser(
+                id=1, username=clean_username, is_admin=True
+            )
+
+        with contextlib.suppress(Exception):
+            self._hasher.verify(self._dummy_hash, password)
+        return None
 
     def verify(self, username: str, password: str) -> bool:
-        """Return True when both username and password match."""
-        if not self._configured:
-            return False
-        expected = self._username.encode("utf-8")
-        actual = username.encode("utf-8")
-        if not hmac.compare_digest(expected, actual):
-            return False
-        try:
-            return PasswordHasher().verify(self._hash, password)
-        except (InvalidHashError, VerificationError):
-            return False
+        """Return True when both username and password match a valid user."""
+        return self.verify_user(username, password) is not None
+
+
+PasswordVerifier = DatabasePasswordVerifier
 
 
 class LoginRateLimiter:

@@ -4,7 +4,7 @@ Instructions for AI agents (and humans) working in this repository.
 
 BookFlow is a small self-hosted OPDS server: read-only filesystem →
 SQLite index → OPDS catalogs, plus on-demand X3/X4 EPUB optimization and
-single-user reading progression. The plan is complete (milestones M1–M8 +
+multi-user reading progression. The plan is complete (milestones M1–M8 +
 optional items); expect maintenance, bug fixes, and small features rather
 than greenfield work.
 
@@ -106,21 +106,22 @@ pkill -f "[f]lask --app bookflow.app run"
    `optimized_books` row (`source_mtime`, `source_size`,
    `optimized_size`). Writes to file and row happen together; readers
    treat any mismatch as a miss.
-5. **Progression is per logical book**, one row, shared across original
-   and X3/X4 downloads. Timestamps: accept naive as UTC, serialize with
-   `Z` and microsecond precision (replays must compare equal).
-6. **One admin, one credential.** Argon2id in memory, session auth for
-   `/admin`, HTTP Basic for `/opds`, OPDS 401 body is the Authentication
-   Document. Never log passwords, cookies, or auth headers.
+5. **Progression is per (user, book)**, one row per user per book,
+   shared across original and X3/X4 downloads. Timestamps: accept naive as
+   UTC, serialize with `Z` and microsecond precision (replays must compare
+   equal).
+6. **User credentials stored in DB.** Argon2id in SQLite, session auth for
+   `/admin` (admins only), HTTP Basic for `/opds` (all users), OPDS 401
+   body is the Authentication Document. Never log passwords, cookies, or
+   auth headers.
 7. **Vendored epubkit is third-party code** (`optimizer/epubkit/`, MIT —
    keep `NOTICE`, keep the ruff per-file-ignores). Avoid editing it;
    upstream it separately if the pipeline itself must change.
-8. **Non-goals:** no multi-user or roles, uploads, book delete/rename/move
-   or metadata/cover editing, cloud storage, Calibre/Elasticsearch/Redis/
-   Celery/K8s/microservices, a separate epubkit HTTP server,
-   background or scheduled optimization, pre-generated X3/X4 files, and no
-   separate progression per device or per optimization profile. Keep the
-   application small.
+8. **Non-goals:** no uploads, book delete/rename/move or metadata/cover
+   editing, cloud storage, Calibre/Elasticsearch/Redis/Celery/K8s/
+   microservices, a separate epubkit HTTP server, background or scheduled
+   optimization, pre-generated X3/X4 files, and no separate progression per
+   device or per optimization profile. Keep the application small.
 
 ## Known gotchas
 

@@ -172,6 +172,36 @@ h2 {
   color: #a16207;
 }
 
+.badge-muted {
+  background: #f1f3f5;
+  color: var(--muted);
+}
+
+table.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.5rem;
+}
+
+table.data-table th,
+table.data-table td {
+  padding: 0.6rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+table.data-table th {
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+table.data-table tr:last-child td {
+  border-bottom: none;
+}
+
 label {
   display: block;
   margin: 0.75rem 0 0.25rem;

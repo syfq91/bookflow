@@ -16,6 +16,8 @@ from flask import (
 from bookflow.auth.decorators import require_csrf
 from bookflow.auth.service import (
     ADMIN_SESSION_KEY,
+    USER_ID_SESSION_KEY,
+    USERNAME_SESSION_KEY,
     ensure_csrf_token,
     safe_next_target,
 )
@@ -63,10 +65,23 @@ def login_post() -> str | Response | tuple[str, int]:
             503,
         )
 
-    if verifier.verify(username, password):
+    user = verifier.verify_user(username, password)
+    if user is not None:
+        if not user.is_admin:
+            limiter.record_failure(key)
+            return (
+                render_template(
+                    "login.html",
+                    error="Reader accounts cannot access the admin dashboard.",
+                    next_target=next_target,
+                ),
+                403,
+            )
         limiter.reset(key)
         session.clear()
         session[ADMIN_SESSION_KEY] = True
+        session[USER_ID_SESSION_KEY] = user.id
+        session[USERNAME_SESSION_KEY] = user.username
         session.permanent = True
         ensure_csrf_token()
         target = safe_next_target(next_target) or url_for("admin.dashboard")

@@ -428,3 +428,87 @@ def test_progression_put_waits_for_book_lock(app, folder_id: int) -> None:
 
     assert blocked
     assert statuses == [201]
+
+
+def test_progression_locks_are_per_user_and_book() -> None:
+    assert progression_lock(1, 10) is progression_lock(1, 10)
+    assert progression_lock(1, 10) is not progression_lock(2, 10)
+    assert progression_lock(1, 10) is not progression_lock(1, 20)
+
+
+def test_multi_user_progression_isolation(app, folder_id: int) -> None:
+    """User A and User B maintain separate progressions for the same book."""
+    from argon2 import PasswordHasher
+
+    from bookflow.database.database import session_scope
+    from bookflow.database.models import User
+
+    hasher = PasswordHasher()
+    with session_scope() as session:
+        session.add_all(
+            [
+                User(
+                    username="alice",
+                    password_hash=hasher.hash("alicepass"),
+                    is_admin=False,
+                ),
+                User(
+                    username="bob",
+                    password_hash=hasher.hash("bobpass"),
+                    is_admin=False,
+                ),
+            ]
+        )
+
+    client = app.test_client()
+    book_id = _book_id(folder_id, title="Dune")
+
+    alice_header = {
+        "Authorization": f"Basic {base64.b64encode(b'alice:alicepass').decode()}"
+    }
+    bob_header = {
+        "Authorization": f"Basic {base64.b64encode(b'bob:bobpass').decode()}"
+    }
+
+    # Alice sets progression 0.25
+    doc_alice = _document(progression=0.25, title="Alice Progress")
+    resp_alice = client.put(
+        f"/opds/publications/{book_id}/progression",
+        data=json.dumps(doc_alice),
+        content_type=PROGRESSION_TYPE,
+        headers=alice_header,
+    )
+    assert resp_alice.status_code == 201
+
+    # Bob has no progression initially
+    resp_bob_get = client.get(
+        f"/opds/publications/{book_id}/progression", headers=bob_header
+    )
+    assert resp_bob_get.status_code == 200
+    assert resp_bob_get.data == b""
+
+    # Bob sets progression 0.75
+    doc_bob = _document(progression=0.75, title="Bob Progress")
+    resp_bob = client.put(
+        f"/opds/publications/{book_id}/progression",
+        data=json.dumps(doc_bob),
+        content_type=PROGRESSION_TYPE,
+        headers=bob_header,
+    )
+    assert resp_bob.status_code == 201
+
+    # Alice still gets 0.25
+    alice_get = client.get(
+        f"/opds/publications/{book_id}/progression", headers=alice_header
+    )
+    assert alice_get.status_code == 200
+    assert json.loads(alice_get.data)["progression"] == 0.25
+    assert json.loads(alice_get.data)["title"] == "Alice Progress"
+
+    # Bob gets 0.75
+    bob_get = client.get(
+        f"/opds/publications/{book_id}/progression", headers=bob_header
+    )
+    assert bob_get.status_code == 200
+    assert json.loads(bob_get.data)["progression"] == 0.75
+    assert json.loads(bob_get.data)["title"] == "Bob Progress"

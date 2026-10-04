@@ -7,6 +7,7 @@ from datetime import datetime
 from sqlalchemy import (
     JSON,
     BigInteger,
+    Boolean,
     DateTime,
     Float,
     ForeignKey,
@@ -80,23 +81,57 @@ class Book(Base):
     )
 
     folder: Mapped[LibraryFolder] = relationship(back_populates="books")
-    progression: Mapped[Progression | None] = relationship(
-        back_populates="book", uselist=False, cascade="all, delete-orphan"
+    progressions: Mapped[list[Progression]] = relationship(
+        back_populates="book", cascade="all, delete-orphan"
     )
     optimized: Mapped[list[OptimizedBook]] = relationship(
         back_populates="book", cascade="all, delete-orphan"
     )
 
 
-class Progression(Base):
-    """Latest reading progression for a book (single-user: one per book)."""
+class User(Base):
+    """A user account for OPDS catalog access and admin operations."""
 
-    __tablename__ = "progressions"
-    __table_args__ = (UniqueConstraint("book_id"),)
+    __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    username: Mapped[str] = mapped_column(
+        String(255), nullable=False, unique=True, index=True
+    )
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_admin: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    progressions: Mapped[list[Progression]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+
+
+class Progression(Base):
+    """Latest reading progression for a book per user."""
+
+    __tablename__ = "progressions"
+    __table_args__ = (
+        UniqueConstraint("user_id", "book_id", name="uq_progressions_user_book"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     book_id: Mapped[int] = mapped_column(
-        ForeignKey("books.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("books.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
     progression: Mapped[float | None] = mapped_column(JSON, nullable=True)
@@ -115,7 +150,8 @@ class Progression(Base):
         DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
-    book: Mapped[Book] = relationship(back_populates="progression")
+    user: Mapped[User] = relationship(back_populates="progressions")
+    book: Mapped[Book] = relationship(back_populates="progressions")
 
 
 class OptimizedBook(Base):

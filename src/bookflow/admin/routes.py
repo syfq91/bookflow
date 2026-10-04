@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import NotRequired, TypedDict
 
+from argon2 import PasswordHasher
 from flask import (
     Blueprint,
     Response,
@@ -16,6 +18,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    session,
     url_for,
 )
 from sqlalchemy import ColumnElement, func, select
@@ -24,7 +27,13 @@ from sqlalchemy.exc import OperationalError
 from bookflow.auth.decorators import login_required, require_csrf
 from bookflow.config import Settings
 from bookflow.database.database import session_scope
-from bookflow.database.models import Book, LibraryFolder, OptimizedBook
+from bookflow.database.models import (
+    Book,
+    LibraryFolder,
+    OptimizedBook,
+    Progression,
+    User,
+)
 from bookflow.health import (
     HealthCheck,
     HealthStats,
@@ -262,6 +271,168 @@ def health() -> str:
     )
 
 
+@bp.get("/users")
+@login_required
+def users() -> str:
+    """Render the user accounts list."""
+    with session_scope() as db:
+        user_rows = db.execute(
+            select(
+                User,
+                func.count(Progression.id).label("progression_count"),
+            )
+            .outerjoin(Progression, Progression.user_id == User.id)
+            .group_by(User.id)
+            .order_by(User.username)
+        ).all()
+        user_list = [
+            {
+                "id": u.id,
+                "username": u.username,
+                "is_admin": u.is_admin,
+                "created_at": u.created_at,
+                "progression_count": prog_count,
+            }
+            for u, prog_count in user_rows
+        ]
+    return render_template(
+        "users.html",
+        users=user_list,
+        current_user_id=session.get("user_id"),
+    )
+
+
+@bp.get("/users/new")
+@login_required
+def user_new() -> str:
+    """Render the new user creation form."""
+    return render_template(
+        "add_user.html", username="", is_admin_checked=False, error=None
+    )
+
+
+@bp.post("/users")
+@login_required
+def user_create() -> str | Response | tuple[str, int]:
+    """Create a new user account."""
+    username = (request.form.get("username") or "").strip()
+    password = request.form.get("password") or ""
+    is_admin = bool(request.form.get("is_admin"))
+
+    if not username:
+        return (
+            render_template(
+                "add_user.html",
+                username=username,
+                is_admin_checked=is_admin,
+                error="Username is required.",
+            ),
+            400,
+        )
+
+    if not re.match(r"^[a-zA-Z0-9_.-]{3,64}$", username):
+        return (
+            render_template(
+                "add_user.html",
+                username=username,
+                is_admin_checked=is_admin,
+                error=(
+                    "Username must be 3-64 characters and contain only "
+                    "letters, digits, '.', '-', or '_'."
+                ),
+            ),
+            400,
+        )
+
+    if len(password) < 8:
+        return (
+            render_template(
+                "add_user.html",
+                username=username,
+                is_admin_checked=is_admin,
+                error="Password must be at least 8 characters long.",
+            ),
+            400,
+        )
+
+    with session_scope() as db:
+        existing = db.scalar(select(User).where(User.username == username))
+        if existing is not None:
+            return (
+                render_template(
+                    "add_user.html",
+                    username=username,
+                    is_admin_checked=is_admin,
+                    error=f"Username '{username}' is already taken.",
+                ),
+                400,
+            )
+
+        hasher = PasswordHasher()
+        new_user = User(
+            username=username,
+            password_hash=hasher.hash(password),
+            is_admin=is_admin,
+        )
+        db.add(new_user)
+
+    flash(f"User '{username}' created successfully.", "ok")
+    return redirect(url_for("admin.users"))
+
+
+@bp.post("/users/<int:user_id>/password")
+@login_required
+def user_change_password(user_id: int) -> Response:
+    """Change or reset a user's password."""
+    password = request.form.get("password") or ""
+    if len(password) < 8:
+        flash("Password must be at least 8 characters long.", "error")
+        return redirect(url_for("admin.users"))
+
+    with session_scope() as db:
+        user = db.get(User, user_id)
+        if user is None:
+            abort(404)
+        hasher = PasswordHasher()
+        user.password_hash = hasher.hash(password)
+        username = user.username
+
+    flash(f"Password for user '{username}' has been updated.", "ok")
+    return redirect(url_for("admin.users"))
+
+
+@bp.post("/users/<int:user_id>/delete")
+@login_required
+def user_delete(user_id: int) -> Response:
+    """Delete a user account."""
+    current_uid = session.get("user_id")
+    if current_uid is not None and current_uid == user_id:
+        flash("You cannot delete your own account.", "error")
+        return redirect(url_for("admin.users"))
+
+    with session_scope() as db:
+        user = db.get(User, user_id)
+        if user is None:
+            abort(404)
+
+        if user.is_admin:
+            admin_count = (
+                db.scalar(
+                    select(func.count(User.id)).where(User.is_admin.is_(True))
+                )
+                or 0
+            )
+            if admin_count <= 1:
+                flash("Cannot delete the last remaining administrator.", "error")
+                return redirect(url_for("admin.users"))
+
+        username = user.username
+        db.delete(user)
+
+    flash(f"User '{username}' has been deleted.", "ok")
+    return redirect(url_for("admin.users"))
+
+
 def _folders_response() -> str:
     return render_template("folders.html", folders=list_folders())
 
@@ -374,6 +545,7 @@ def _empty_health_stats() -> HealthStats:
         "cache": {"x3": {"books": 0, "size": 0}, "x4": {"books": 0, "size": 0}},
         "progression": {"books": 0, "devices": []},
         "scanner": {"last_success": None, "errors": []},
+        "users": {"total": 0, "admins": 0, "readers": 0},
     }
 
 

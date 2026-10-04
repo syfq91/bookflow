@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from flask import Response, current_app, request, url_for
+from flask import Response, current_app, g, request, url_for
 from werkzeug.datastructures import Authorization
 
 from bookflow.auth.service import PasswordVerifier
@@ -34,8 +34,10 @@ def authenticate(
         )
     if authorization is None or authorization.type != "basic":
         return unauthorized()
-    if not verifier.verify(authorization.username, authorization.password):
+    user = verifier.verify_user(authorization.username, authorization.password)
+    if user is None:
         return unauthorized()
+    g.current_user = user
     return None
 
 

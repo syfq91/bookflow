@@ -168,6 +168,35 @@ def login_admin(
     )
 
 
+def create_user(
+    *,
+    username: str,
+    password: str,
+    is_admin: bool = False,
+) -> int:
+    """Insert a user row and return their id."""
+    from argon2 import PasswordHasher
+
+    from bookflow.database.models import User
+
+    hasher = PasswordHasher()
+    with session_scope() as session:
+        user = User(
+            username=username,
+            password_hash=hasher.hash(password),
+            is_admin=is_admin,
+        )
+        session.add(user)
+        session.flush()
+        return user.id
+
+
+def basic_auth_headers(username: str, password: str) -> dict[str, str]:
+    """Build HTTP Basic Authorization header dictionary."""
+    token = base64.b64encode(f"{username}:{password}".encode()).decode()
+    return {"Authorization": f"Basic {token}"}
+
+
 def insert_books(folder_id: int, specs: list[dict]) -> list[int]:
     """Insert book rows directly (no files needed) and return their ids."""
     ids: list[int] = []

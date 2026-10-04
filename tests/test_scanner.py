@@ -13,7 +13,7 @@ from sqlalchemy import func, select
 
 from bookflow.config import Settings
 from bookflow.database.database import init_engine, reset_engine, session_scope
-from bookflow.database.models import Book, LibraryFolder, Progression
+from bookflow.database.models import Book, LibraryFolder, Progression, User
 from bookflow.library import scanner
 from bookflow.library.scanner import ScanInProgress, folder_lock, scan_folder
 from bookflow.library.service import add_folder
@@ -173,7 +173,9 @@ def test_rescan_removes_deleted_files(folder_id: int, root: Path) -> None:
     _scan(folder_id)
     with session_scope() as session:
         book = session.scalars(select(Book)).one()
-        session.add(Progression(book_id=book.id, progression=0.42))
+        user_id = session.scalar(select(User.id))
+        assert user_id is not None
+        session.add(Progression(user_id=user_id, book_id=book.id, progression=0.42))
 
     path.unlink()
     result = _scan(folder_id)

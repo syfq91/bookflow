@@ -343,3 +343,24 @@ def test_rate_limiter_prunes_empty_keys() -> None:
     now += 61.0
     assert not limiter.is_blocked(key)
     assert key not in limiter._failures
+
+
+def test_reader_user_cannot_access_admin_dashboard(migrated_client) -> None:
+    from argon2 import PasswordHasher
+
+    from bookflow.database.database import session_scope
+    from bookflow.database.models import User
+
+    with session_scope() as session:
+        session.add(
+            User(
+                username="reader1",
+                password_hash=PasswordHasher().hash("readerpass"),
+                is_admin=False,
+            )
+        )
+
+    resp = login_admin(migrated_client, username="reader1", password="readerpass")
+    assert resp.status_code == 403
+    assert b"Reader accounts cannot access the admin dashboard." in resp.data
+    assert migrated_client.get("/admin/").status_code == 302

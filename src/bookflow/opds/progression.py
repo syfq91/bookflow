@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Never
 
-from flask import Blueprint, Response, abort, request
+from flask import Blueprint, Response, abort, g, request
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from werkzeug.exceptions import HTTPException
@@ -49,11 +49,15 @@ class _Document:
 @bp.get("/<int:book_id>/progression")
 def publication_progression(book_id: int) -> Response:
     """Return the stored reading progression for a publication."""
+    user_id = g.current_user.id
     with session_scope() as session:
         if session.get(Book, book_id) is None:
             abort(404)
         row = session.scalar(
-            select(Progression).where(Progression.book_id == book_id)
+            select(Progression).where(
+                Progression.user_id == user_id,
+                Progression.book_id == book_id,
+            )
         )
         if row is None:
             return Response(b"", content_type=PROGRESSION_TYPE)
@@ -64,7 +68,8 @@ def publication_progression(book_id: int) -> Response:
 @bp.put("/<int:book_id>/progression")
 def update_publication_progression(book_id: int) -> Response:
     """Save or update reading progression for a publication."""
-    with progression_lock(book_id), session_scope() as session:
+    user_id = g.current_user.id
+    with progression_lock(user_id, book_id), session_scope() as session:
         if session.get(Book, book_id) is None:
             abort(404)
         if request.mimetype != PROGRESSION_TYPE:
@@ -75,11 +80,14 @@ def update_publication_progression(book_id: int) -> Response:
         except (ValueError, UnicodeDecodeError):
             abort(400)
         row = session.scalar(
-            select(Progression).where(Progression.book_id == book_id)
+            select(Progression).where(
+                Progression.user_id == user_id,
+                Progression.book_id == book_id,
+            )
         )
         created = row is None
         if created:
-            row = Progression(book_id=book_id)
+            row = Progression(user_id=user_id, book_id=book_id)
             session.add(row)
         elif row.modified is not None and document.modified < _as_aware(
             row.modified
@@ -96,7 +104,10 @@ def update_publication_progression(book_id: int) -> Response:
         except IntegrityError:
             session.rollback()
             row = session.scalar(
-                select(Progression).where(Progression.book_id == book_id)
+                select(Progression).where(
+                    Progression.user_id == user_id,
+                    Progression.book_id == book_id,
+                )
             )
             if row is None:
                 raise
