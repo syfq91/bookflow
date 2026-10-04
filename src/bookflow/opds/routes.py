@@ -92,14 +92,31 @@ def _catalog_root(profile: str | None) -> Response:
     """Build the root feed of a catalog: registered folders, listed directly.
 
     The root feed *is* the folders view, so clients land in the folder
-    hierarchy without an extra hop. The original catalog keeps its X3/X4
-    catalog links so the device profiles stay reachable.
+    hierarchy without an extra hop. The flat feeds (All Books, Recent,
+    Authors) are linked alongside so entry-only clients can reach them,
+    and the original catalog keeps its X3/X4 catalog links so the device
+    profiles stay reachable.
     """
     ep = _endpoints(profile)
     folders = _registered_folders()
     with session_scope() as session:
         updated = session.scalar(select(func.max(Book.updated_at)))
     links, entries = _folder_items(ep, folders, updated)
+    for title, href, link_type in (
+        ("All Books", url_for(ep.books), ACQUISITION_TYPE),
+        ("Recent", url_for(ep.recent), ACQUISITION_TYPE),
+        ("Authors", url_for(ep.authors), NAVIGATION_TYPE),
+    ):
+        links.append(Link(SUBSECTION_REL, href, link_type, title=title))
+        entries.append(
+            nav_entry(
+                entry_id=f"tag:bookflow,section,{href}",
+                title=title,
+                href=href,
+                link_type=link_type,
+                updated=updated,
+            )
+        )
     if profile is None:
         for name, href in (
             ("X3 Catalog", url_for("opds.x3_feed")),
@@ -117,14 +134,7 @@ def _catalog_root(profile: str | None) -> Response:
                     updated=updated,
                 )
             )
-    links.append(
-        Link(
-            SEARCH_REL,
-            f"{url_for(ep.search)}?q={{searchTerms}}",
-            ACQUISITION_TYPE,
-            title="Search",
-        )
-    )
+    links.append(_search_link(ep))
     title = (
         "BookFlow"
         if profile is None
@@ -281,6 +291,7 @@ def _folders_index(profile: str | None) -> Response:
     with session_scope() as session:
         updated = session.scalar(select(func.max(Book.updated_at)))
     links, entries = _folder_items(ep, folders, updated)
+    links.append(_search_link(ep))
     data = navigation_feed(
         title=f"BookFlow — {_prefix(profile)}Folders",
         updated=updated,
@@ -402,6 +413,7 @@ def _authors_feed(profile: str | None) -> Response:
         title=f"BookFlow — {_prefix(profile)}Authors",
         updated=updated,
         self_href=url_for(ep.authors),
+        links=[_search_link(ep)],
         entries=entries,
     )
     return Response(data, content_type=NAVIGATION_TYPE)
@@ -508,6 +520,7 @@ def _book_feed(book_id: int, profile: str | None) -> Response:
             updated=updated,
             self_href=url_for(ep.book, book_id=book_id),
             books=[book],
+            links=[_search_link(ep)],
             profile=profile,
         )
     return Response(data, content_type=ACQUISITION_TYPE)
@@ -692,6 +705,16 @@ def _prefix(profile: str | None) -> str:
     return f"{profile.upper()} — " if profile else ""
 
 
+def _search_link(ep: _Endpoints) -> Link:
+    """Feed-level OpenSearch template for one catalog."""
+    return Link(
+        SEARCH_REL,
+        f"{url_for(ep.search)}?q={{searchTerms}}",
+        ACQUISITION_TYPE,
+        title="Search",
+    )
+
+
 def _clean_path(value: str) -> str:
     """Normalize the ``path`` query argument into an index prefix.
 
@@ -788,7 +811,7 @@ def _acquisition_response(
         updated=book_page.updated,
         self_href=url_for(endpoint, **extra, page=page if page > 1 else None),
         books=book_page.books,
-        links=links,
+        links=[*links, _search_link(_endpoints(profile))],
         entries=entries,
         next_href=next_href,
         profile=profile,

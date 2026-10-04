@@ -142,9 +142,6 @@ def test_root_feed_is_the_folder_view(client, folder_id: int) -> None:
     assert feed.findtext("a:title", namespaces=NS) == "BookFlow"
     by_rel = links_by_rel(feed_links(feed))
     hrefs = {link.get("href") for link in feed_links(feed)}
-    assert "/opds/books" not in hrefs
-    assert "/opds/recent" not in hrefs
-    assert "/opds/authors" not in hrefs
     assert "/opds/folders" not in hrefs
     assert "subsection" in by_rel
     search = by_rel["search"]
@@ -153,7 +150,8 @@ def test_root_feed_is_the_folder_view(client, folder_id: int) -> None:
     self_link = by_rel["self"]
     assert self_link[0].get("type") == NAV
     # Clients such as KOReader browse the root from entries alone, so the
-    # registered folders must be entries and not just feed-level links.
+    # registered folders and the flat feeds must be entries and not just
+    # feed-level links.
     sections: dict[str, tuple[str, str]] = {}
     for entry in feed_entries(feed):
         links = links_by_rel(entry_links(entry)).get(SUBSECTION_REL, [])
@@ -161,6 +159,9 @@ def test_root_feed_is_the_folder_view(client, folder_id: int) -> None:
         sections[title] = (links[0].get("href", ""), links[0].get("type", ""))
     assert sections == {
         "books": (f"/opds/folders/{folder_id}", ACQ),
+        "All Books": ("/opds/books", ACQ),
+        "Recent": ("/opds/recent", ACQ),
+        "Authors": ("/opds/authors", NAV),
         "X3 Catalog": ("/opdsx3", NAV),
         "X4 Catalog": ("/opdsx4", NAV),
     }
@@ -414,6 +415,33 @@ def test_search_response_is_acquisition_feed(client, folder_id: int) -> None:
     assert resp.headers["Content-Type"].startswith(ACQ)
 
 
+def test_search_link_present_on_every_feed(
+    client, folder_id: int, root: Path
+) -> None:
+    insert_books(
+        folder_id,
+        [{"title": "Dune", "path": "dune.epub", "authors": "Frank Herbert"}],
+    )
+    book_id = _book_ids()[0]
+
+    for path in (
+        "/opds",
+        "/opds/books",
+        "/opds/recent",
+        "/opds/folders",
+        f"/opds/folders/{folder_id}",
+        "/opds/authors",
+        "/opds/authors/Frank%20Herbert",
+        "/opds/search?q=Dune",
+        f"/opds/books/{book_id}",
+    ):
+        feed = parse_feed(_get(client, path))
+        search = links_by_rel(feed_links(feed))["search"]
+        assert len(search) == 1, path
+        assert "{searchTerms}" in search[0].get("href", ""), path
+        assert search[0].get("href", "").startswith("/opds/search"), path
+
+
 # --- single book ------------------------------------------------------------
 
 
@@ -435,7 +463,9 @@ def test_book_feed_includes_acquisition_and_cover_links(
     assert acquisition.get("type") == "application/epub+zip"
     assert acquisition.get("href") == f"/opds/download/{book_id}"
     assert by_rel[THUMB_REL][0].get("href") == f"/opds/cover/{book_id}"
+    assert by_rel[THUMB_REL][0].get("type") == "image/jpeg"
     assert by_rel[IMAGE_REL][0].get("href") == f"/opds/cover/{book_id}"
+    assert by_rel[IMAGE_REL][0].get("type") == "image/jpeg"
 
 
 def test_book_feed_without_title_uses_filename(client, folder_id: int) -> None:

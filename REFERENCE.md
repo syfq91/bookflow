@@ -115,7 +115,7 @@ only then answers with its own error document. The same applies to
 
 | Endpoint              | Contents                                              |
 | --------------------- | ----------------------------------------------------- |
-| `/opds`               | Root navigation feed: the folder view — one entry per registered folder, plus Search and the X3/X4 catalog links |
+| `/opds`               | Root navigation feed: the folder view — one entry per registered folder, plus All Books, Recent, Authors, Search and the X3/X4 catalog links |
 | `/opds/books?page=N`  | All books, A→Z, 50 per page                           |
 | `/opds/recent?page=N` | Books newest first                                    |
 | `/opds/authors`       | Authors grouped by name, with book counts             |
@@ -139,14 +139,16 @@ only then answers with its own error document. The same applies to
 | `/opds/publications/<id>/progression` | Reading position per OPDS Progression 1.0: `GET` reads, `PUT` updates (`application/opds-progression+json`); conflicts are `409` problem details — full client docs below |
 
 The roots (`/opds`, `/opdsx3`, `/opdsx4`) all open straight into the folder
-view, so a client pointed at any of them browses the same tree. The flat
-feeds (`/opds/books`, `/opds/recent`, `/opds/authors`, `/opds/folders` and
-their X3/X4 mirrors) still exist but are no longer linked from the roots —
-reach them by URL or through search. The X3/X4 catalogs contain the full
-library and mirror the original catalog's structure section for section;
-only EPUB entries differ — they use the device's optimized download, while
-other formats fall back to the original file so no acquisition link is ever
-broken.
+view, so a client pointed at any of them browses the same tree, and each
+root also links its flat feeds (`/opds/books`, `/opds/recent`,
+`/opds/authors` and their X3/X4 mirrors) as entries. `/opds/folders` stays
+URL-only — the root already is the folder view. Every feed, not just the
+roots, advertises the catalog's search template with `rel="search"`, so
+clients that refresh the link per feed never lose search mid-browse. The
+X3/X4 catalogs contain the full library and mirror the original catalog's
+structure section for section; only EPUB entries differ — they use the
+device's optimized download, while other formats fall back to the original
+file so no acquisition link is ever broken.
 
 Folder feeds mirror the library's directory tree from the index — they read
 `books.relative_path` only and never touch the filesystem, so an unknown

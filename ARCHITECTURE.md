@@ -440,7 +440,7 @@ All `/admin/*` (except login) require the session cookie.
 
 | Path | Contents |
 | ---- | -------- |
-| `/opds` | root navigation: the folder view (one entry per registered folder), Search, X3/X4 Catalogs |
+| `/opds` | root navigation: the folder view (one entry per registered folder), All Books/Recent/Authors, Search, X3/X4 Catalogs — every feed carries the search template |
 | `/opds/books`, `/opds/recent`, `/opds/search?q=` | acquisition feeds, 50/page |
 | `/opds/authors`, `/opds/authors/<name>` | grouped navigation + author feed |
 | `/opds/folders`, `/opds/folders/<id>?path=` | folder hierarchy: registered folders → one directory level (subfolders + books), derived from `relative_path`, never from the filesystem |

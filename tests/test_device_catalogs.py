@@ -157,9 +157,15 @@ def test_device_root_is_folder_view(client, folder_id, profile) -> None:
     )
     assert _section_titles(feed) == {
         "books": f"/opds{profile}/folders/{folder_id}",
+        "All Books": f"/opds{profile}/books",
+        "Recent": f"/opds{profile}/recent",
+        "Authors": f"/opds{profile}/authors",
     }
     assert _section_titles(original) == {
         "books": f"/opds/folders/{folder_id}",
+        "All Books": "/opds/books",
+        "Recent": "/opds/recent",
+        "Authors": "/opds/authors",
         "X3 Catalog": "/opdsx3",
         "X4 Catalog": "/opdsx4",
     }
@@ -299,6 +305,20 @@ def test_device_search_uses_profile_downloads(
     assert feed_titles(feed) == ["Dune"]
     acquisition = links_by_rel(entry_links(feed_entries(feed)[0]))[ACQUISITION_REL][0]
     assert acquisition.get("href") == f"/opds{profile}/download/{epub_id}"
+
+
+@pytest.mark.parametrize("profile", ["x3", "x4"])
+def test_device_feeds_advertise_profile_search(client, folder_id, root, profile):
+    _mixed_library(root, folder_id)
+
+    for path in (f"/opds{profile}/books", f"/opds{profile}/search?q=Dune"):
+        feed = parse_feed(_get(client, path))
+        search = [
+            link for link in feed_links(feed) if link.get("rel") == "search"
+        ]
+        assert len(search) == 1, path
+        assert search[0].get("href", "").startswith(f"/opds{profile}/search"), path
+        assert "{searchTerms}" in search[0].get("href", ""), path
 
 
 # --- device book feeds ------------------------------------------------------
