@@ -18,7 +18,7 @@ from bookflow.database.models import Book, LibraryFolder
 from bookflow.library.paths import resolve_readable_dir
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class FolderResult:
     """Outcome of an attempt to register a folder."""
 
@@ -105,23 +105,19 @@ def get_folder(folder_id: int) -> FolderData | None:
 def list_folders() -> list[FolderData]:
     """Return every registered folder with its index statistics."""
     with session_scope() as session:
-        folders = session.scalars(
-            select(LibraryFolder).order_by(LibraryFolder.path)
-        ).all()
-        stats = {
-            row[0]: (row[1], row[2])
-            for row in session.execute(
-                select(
-                    Book.folder_id,
-                    func.count(Book.id),
-                    func.coalesce(func.sum(Book.file_size), 0),
-                ).group_by(Book.folder_id)
+        rows = session.execute(
+            select(
+                LibraryFolder,
+                func.count(Book.id),
+                func.coalesce(func.sum(Book.file_size), 0),
             )
-            if row[0] is not None
-        }
+            .outerjoin(Book, Book.folder_id == LibraryFolder.id)
+            .group_by(LibraryFolder.id)
+            .order_by(LibraryFolder.path)
+        ).all()
         return [
-            _folder_data(folder, *stats.get(folder.id, (0, 0)))
-            for folder in folders
+            _folder_data(folder, books, size)
+            for folder, books, size in rows
         ]
 
 

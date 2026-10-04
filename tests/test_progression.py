@@ -13,7 +13,7 @@ import pytest
 from bookflow.config import Settings
 from bookflow.library.service import add_folder
 from bookflow.optimizer.locks import progression_lock
-from factories import insert_books
+from factories import basic_auth_headers, create_user, insert_books
 
 PASSWORD = "opds-pass"
 
@@ -91,7 +91,7 @@ def _document(**overrides) -> dict:
 
 
 def _parse(value: str) -> datetime:
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return datetime.fromisoformat(value)
 
 
 # --- authentication document ------------------------------------------------
@@ -438,37 +438,14 @@ def test_progression_locks_are_per_user_and_book() -> None:
 
 def test_multi_user_progression_isolation(app, folder_id: int) -> None:
     """User A and User B maintain separate progressions for the same book."""
-    from argon2 import PasswordHasher
-
-    from bookflow.database.database import session_scope
-    from bookflow.database.models import User
-
-    hasher = PasswordHasher()
-    with session_scope() as session:
-        session.add_all(
-            [
-                User(
-                    username="alice",
-                    password_hash=hasher.hash("alicepass"),
-                    is_admin=False,
-                ),
-                User(
-                    username="bob",
-                    password_hash=hasher.hash("bobpass"),
-                    is_admin=False,
-                ),
-            ]
-        )
+    create_user("alice", "alicepass", is_admin=False)
+    create_user("bob", "bobpass", is_admin=False)
 
     client = app.test_client()
     book_id = _book_id(folder_id, title="Dune")
 
-    alice_header = {
-        "Authorization": f"Basic {base64.b64encode(b'alice:alicepass').decode()}"
-    }
-    bob_header = {
-        "Authorization": f"Basic {base64.b64encode(b'bob:bobpass').decode()}"
-    }
+    alice_header = basic_auth_headers("alice", "alicepass")
+    bob_header = basic_auth_headers("bob", "bobpass")
 
     # Alice sets progression 0.25
     doc_alice = _document(progression=0.25, title="Alice Progress")

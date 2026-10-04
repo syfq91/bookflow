@@ -46,7 +46,7 @@ EPOCH = datetime(1970, 1, 1)
 ElementTree.register_namespace("", ATOM_NS)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Link:
     """A single Atom link element."""
 

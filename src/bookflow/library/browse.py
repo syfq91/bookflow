@@ -16,7 +16,7 @@ from bookflow.library.paths import resolve_readable_dir
 MAX_ENTRIES = 500
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class BrowseResult:
     """Outcome of an attempt to list one directory."""
 
@@ -71,8 +71,7 @@ def _list(current: Path, root: Path) -> BrowseResult:
     except OSError:
         return BrowseResult(ok=False, error="Folder could not be listed.")
 
-    for entry in dirs[:MAX_ENTRIES]:
-        entries.append((entry.name, str(current / entry.name)))
+    entries = [(entry.name, str(current / entry.name)) for entry in dirs[:MAX_ENTRIES]]
     truncated = len(dirs) > MAX_ENTRIES
 
     parent: str | None = None

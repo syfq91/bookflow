@@ -35,7 +35,7 @@ class ScanInProgress(Exception):
         self.folder_id = folder_id
 
 
-@dataclass
+@dataclass(slots=True)
 class ScanResult:
     """Statistics for a single completed scan."""
 

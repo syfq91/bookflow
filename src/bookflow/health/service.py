@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import NotRequired, TypedDict
 
 from flask import current_app
-from sqlalchemy import func, select, text
+from sqlalchemy import case, func, select, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from bookflow.config import Settings
@@ -23,7 +23,7 @@ from bookflow.database.models import (
 )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class HealthCheck:
     """Status of one application component."""
 
@@ -126,11 +126,14 @@ def run_checks(settings: Settings) -> list[HealthCheck]:
 def library_statistics() -> HealthStats:
     """Aggregate index statistics from the database (no filesystem walk)."""
     with session_scope() as session:
-        total_books = int(session.scalar(select(func.count(Book.id))) or 0)
-        total_size = int(
-            session.scalar(select(func.coalesce(func.sum(Book.file_size), 0)))
-            or 0
-        )
+        total_books, total_size = session.execute(
+            select(
+                func.count(Book.id),
+                func.coalesce(func.sum(Book.file_size), 0),
+            )
+        ).one()
+        total_books = int(total_books or 0)
+        total_size = int(total_size or 0)
 
         formats: list[FormatStats] = [
             {
@@ -187,15 +190,21 @@ def library_statistics() -> HealthStats:
             cache[row[0]] = {"books": int(row[1]), "size": int(row[2])}
 
         progression: ProgressionStats = {
-            "books": int(session.scalar(select(func.count(Progression.id))) or 0),
+            "books": int(
+                session.scalar(
+                    select(func.count(func.distinct(Progression.book_id)))
+                )
+                or 0
+            ),
             "devices": sorted(
-                {
-                    name
-                    for name in session.scalars(
-                        select(Progression.device_name)
+                session.scalars(
+                    select(Progression.device_name)
+                    .where(
+                        Progression.device_name.is_not(None),
+                        Progression.device_name != "",
                     )
-                    if name
-                }
+                    .distinct()
+                )
             ),
         }
 
@@ -230,13 +239,16 @@ def library_statistics() -> HealthStats:
                 "duration": last_ok.last_scan_duration,
             }
 
-        total_users = int(session.scalar(select(func.count(User.id))) or 0)
-        admin_users = int(
-            session.scalar(
-                select(func.count(User.id)).where(User.is_admin.is_(True))
+        total_users, admin_users = session.execute(
+            select(
+                func.count(User.id),
+                func.coalesce(
+                    func.sum(case((User.is_admin.is_(True), 1), else_=0)), 0
+                ),
             )
-            or 0
-        )
+        ).one()
+        total_users = int(total_users or 0)
+        admin_users = int(admin_users or 0)
         user_stats: UserStats = {
             "total": total_users,
             "admins": admin_users,

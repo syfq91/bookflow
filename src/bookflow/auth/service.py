@@ -28,8 +28,14 @@ CSRF_SESSION_KEY = "csrf_token"
 DEFAULT_MAX_FAILURES = 5
 DEFAULT_WINDOW_SECONDS = 600.0
 
+DEFAULT_HASHER = PasswordHasher()
 
-@dataclass(frozen=True)
+AUTH_CACHE_TTL_SECONDS = 60.0
+AUTH_CACHE_MAX_ENTRIES = 256
+RATE_LIMITER_MAX_KEYS = 5000
+
+
+@dataclass(frozen=True, slots=True)
 class AuthenticatedUser:
     """Decoupled user context attached to request g."""
 
@@ -47,11 +53,13 @@ class DatabasePasswordVerifier:
         admin_password: str = "",
         hasher: PasswordHasher | None = None,
     ) -> None:
-        self._hasher = hasher or PasswordHasher()
+        self._hasher = hasher or DEFAULT_HASHER
         self._admin_username = admin_username
         self._admin_password = admin_password
-        self._admin_hash = self._hasher.hash(admin_password) if admin_password else ""
         self._dummy_hash = self._hasher.hash("bookflow-timing-defense")
+        self._cache: dict[tuple[str, bytes], tuple[float, AuthenticatedUser]] = {}
+        self._cache_lock = threading.Lock()
+        self._cache_salt = secrets.token_bytes(16)
 
     @property
     def configured(self) -> bool:
@@ -72,6 +80,31 @@ class DatabasePasswordVerifier:
                 self._hasher.verify(self._dummy_hash, "dummy")
             return None
 
+        cache_key = (
+            clean_username,
+            hmac.new(self._cache_salt, password.encode("utf-8"), "sha256").digest(),
+        )
+        now = time.monotonic()
+        with self._cache_lock:
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                cached_at, cached_user = cached
+                if now - cached_at < AUTH_CACHE_TTL_SECONDS:
+                    return cached_user
+                self._cache.pop(cache_key, None)
+
+        def cache_and_return(auth_user: AuthenticatedUser) -> AuthenticatedUser:
+            with self._cache_lock:
+                if len(self._cache) >= AUTH_CACHE_MAX_ENTRIES:
+                    cutoff = now - AUTH_CACHE_TTL_SECONDS
+                    self._cache = {
+                        k: v for k, v in self._cache.items() if v[0] >= cutoff
+                    }
+                    if len(self._cache) >= AUTH_CACHE_MAX_ENTRIES:
+                        self._cache.clear()
+                self._cache[cache_key] = (now, auth_user)
+            return auth_user
+
         # Try SQLite database
         try:
             with session_scope() as session:
@@ -81,10 +114,12 @@ class DatabasePasswordVerifier:
                 if user is not None:
                     try:
                         self._hasher.verify(user.password_hash, password)
-                        return AuthenticatedUser(
-                            id=user.id,
-                            username=user.username,
-                            is_admin=user.is_admin,
+                        return cache_and_return(
+                            AuthenticatedUser(
+                                id=user.id,
+                                username=user.username,
+                                is_admin=user.is_admin,
+                            )
                         )
                     except (InvalidHashError, VerificationError):
                         if (
@@ -100,10 +135,12 @@ class DatabasePasswordVerifier:
                             user.password_hash = self._hasher.hash(
                                 self._admin_password
                             )
-                            return AuthenticatedUser(
-                                id=user.id,
-                                username=user.username,
-                                is_admin=user.is_admin,
+                            return cache_and_return(
+                                AuthenticatedUser(
+                                    id=user.id,
+                                    username=user.username,
+                                    is_admin=user.is_admin,
+                                )
                             )
                         return None
         except SQLAlchemyError:
@@ -119,13 +156,25 @@ class DatabasePasswordVerifier:
                 self._admin_password.encode(), password.encode()
             )
         ):
-            return AuthenticatedUser(
-                id=1, username=clean_username, is_admin=True
+            return cache_and_return(
+                AuthenticatedUser(
+                    id=1, username=clean_username, is_admin=True
+                )
             )
 
         with contextlib.suppress(Exception):
             self._hasher.verify(self._dummy_hash, password)
         return None
+
+    def invalidate_cache(self, username: str | None = None) -> None:
+        """Invalidate cached credentials (e.g. after password change or deletion)."""
+        with self._cache_lock:
+            if username is None:
+                self._cache.clear()
+            else:
+                self._cache = {
+                    k: v for k, v in self._cache.items() if k[0] != username
+                }
 
     def verify(self, username: str, password: str) -> bool:
         """Return True when both username and password match a valid user."""
@@ -145,10 +194,12 @@ class LoginRateLimiter:
         self,
         max_failures: int = DEFAULT_MAX_FAILURES,
         window_seconds: float = DEFAULT_WINDOW_SECONDS,
+        max_keys: int = RATE_LIMITER_MAX_KEYS,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._max_failures = max_failures
         self._window_seconds = window_seconds
+        self._max_keys = max_keys
         self._clock = clock
         self._failures: dict[tuple[str, str], deque[float]] = {}
         self._lock = threading.Lock()
@@ -163,6 +214,8 @@ class LoginRateLimiter:
         """Count a failed attempt against the key."""
         now = self._clock()
         with self._lock:
+            if len(self._failures) >= self._max_keys:
+                self._sweep(now)
             failures = self._prune(key, now)
             failures.append(now)
             self._failures[key] = failures
@@ -171,6 +224,23 @@ class LoginRateLimiter:
         """Forget previous failures for the key (called after a success)."""
         with self._lock:
             self._failures.pop(key, None)
+
+    def _sweep(self, now: float) -> None:
+        """Evict expired keys when approaching memory capacity. Caller holds lock."""
+        cutoff = now - self._window_seconds
+        stale = [
+            k for k, timestamps in self._failures.items()
+            if not timestamps or timestamps[-1] <= cutoff
+        ]
+        for k in stale:
+            self._failures.pop(k, None)
+        if len(self._failures) >= self._max_keys:
+            sorted_keys = sorted(
+                self._failures.keys(),
+                key=lambda k: self._failures[k][-1] if self._failures[k] else 0.0,
+            )
+            for k in sorted_keys[: len(sorted_keys) // 2]:
+                self._failures.pop(k, None)
 
     def _prune(self, key: tuple[str, str], now: float) -> deque[float]:
         """Return the key's in-window failures. Caller must hold the lock."""

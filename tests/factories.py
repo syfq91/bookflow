@@ -169,21 +169,19 @@ def login_admin(
 
 
 def create_user(
-    *,
     username: str,
     password: str,
+    *,
     is_admin: bool = False,
 ) -> int:
     """Insert a user row and return their id."""
-    from argon2 import PasswordHasher
-
+    from bookflow.auth.service import DEFAULT_HASHER
     from bookflow.database.models import User
 
-    hasher = PasswordHasher()
     with session_scope() as session:
         user = User(
             username=username,
-            password_hash=hasher.hash(password),
+            password_hash=DEFAULT_HASHER.hash(password),
             is_admin=is_admin,
         )
         session.add(user)

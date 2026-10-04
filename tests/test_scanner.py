@@ -211,11 +211,11 @@ def test_unreadable_subdirectory_reports_partial(
     locked = root / "locked"
     locked.mkdir()
     make_epub(locked / "hidden.epub", title="Hidden")
-    os.chmod(locked, 0o000)
+    locked.chmod(0o000)
     try:
         result = _scan(folder_id)
     finally:
-        os.chmod(locked, 0o755)
+        locked.chmod(0o755)
 
     assert result.status == "partial"
     assert result.errors

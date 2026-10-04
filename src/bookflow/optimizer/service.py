@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import shutil
 import threading
 import time
@@ -248,7 +247,7 @@ def _generate(
             raise OptimizationError(report.error or "optimization failed")
         if not tmp_file.is_file() or tmp_file.stat().st_size == 0:
             raise OptimizationError("optimizer produced no output")
-        os.replace(tmp_file, cache_file)
+        tmp_file.replace(cache_file)
     except OptimizationError:
         tmp_file.unlink(missing_ok=True)
         raise

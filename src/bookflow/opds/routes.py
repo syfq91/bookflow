@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import threading
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -518,18 +519,61 @@ def download(book_id: int) -> Response:
     return send_book_response(book_file(book_id))
 
 
+_COVER_CACHE_MAX_ENTRIES = 256
+_COVER_MAX_BYTES = 2 * 1024 * 1024
+_cover_cache: dict[tuple[int, int, int], tuple[bytes, str, str] | None] = {}
+_cover_cache_lock = threading.Lock()
+
+
 @bp.get("/opds/cover/<int:book_id>")
 def cover(book_id: int) -> Response:
     """Serve the extracted cover image for an EPUB."""
     target = book_file(book_id)
     if target.suffix.lower() != ".epub":
         abort(404)
+
+    stat = target.stat()
+    cache_key = (book_id, stat.st_mtime_ns, stat.st_size)
+
+    with _cover_cache_lock:
+        cached = _cover_cache.get(cache_key)
+
+    if cache_key in _cover_cache:
+        if cached is None:
+            abort(404)
+        data, media_type, etag = cached
+        if request.if_none_match and (
+            request.if_none_match.contains(etag.strip('"'))
+            or request.if_none_match.contains_raw(etag)
+        ):
+            return Response(
+                status=304,
+                headers={"ETag": etag, "Cache-Control": "public, max-age=3600"},
+            )
+        return Response(
+            data,
+            content_type=media_type,
+            headers={"Cache-Control": "public, max-age=3600", "ETag": etag},
+        )
+
     extracted = extract_cover(target)
     if extracted is None:
+        with _cover_cache_lock:
+            if len(_cover_cache) >= _COVER_CACHE_MAX_ENTRIES:
+                _cover_cache.clear()
+            _cover_cache[cache_key] = None
         abort(404)
+
     data, media_type = extracted
     digest = hashlib.sha256(data).hexdigest()
     etag = f'"{digest}"'
+
+    with _cover_cache_lock:
+        if len(_cover_cache) >= _COVER_CACHE_MAX_ENTRIES:
+            _cover_cache.clear()
+        if len(data) <= _COVER_MAX_BYTES:
+            _cover_cache[cache_key] = (data, media_type, etag)
+
     if request.if_none_match and (
         request.if_none_match.contains(digest)
         or request.if_none_match.contains_raw(etag)

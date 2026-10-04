@@ -173,7 +173,7 @@ def test_user_cannot_delete_self(logged_in_client) -> None:
         assert session.get(User, admin_id) is not None
 
 
-def test_user_cannot_delete_last_admin(logged_in_client) -> None:
+def test_user_can_delete_secondary_admin(logged_in_client) -> None:
     token = csrf_token(logged_in_client)
     logged_in_client.post(
         "/admin/users",
@@ -196,3 +196,25 @@ def test_user_cannot_delete_last_admin(logged_in_client) -> None:
     assert del_resp.status_code == 302
     with session_scope() as session:
         assert session.get(User, admin2_id) is None
+
+
+def test_user_cannot_delete_last_admin(logged_in_client) -> None:
+    token = csrf_token(logged_in_client)
+    with session_scope() as session:
+        admin = session.scalar(select(User).where(User.username == "admin"))
+        assert admin is not None
+        admin_id = admin.id
+
+    # Simulate an admin session without user_id matching admin_id
+    with logged_in_client.session_transaction() as sess:
+        sess["user_id"] = 9999
+
+    del_resp = logged_in_client.post(
+        f"/admin/users/{admin_id}/delete",
+        data={"csrf_token": token},
+        follow_redirects=True,
+    )
+    assert del_resp.status_code == 200
+    assert b"Cannot delete the last remaining administrator" in del_resp.data
+    with session_scope() as session:
+        assert session.get(User, admin_id) is not None

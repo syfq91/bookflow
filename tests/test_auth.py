@@ -6,7 +6,7 @@ import pytest
 
 from bookflow.auth.service import LoginRateLimiter, safe_next_target
 from bookflow.config import Settings
-from factories import csrf_token, login_admin
+from factories import create_user, csrf_token, login_admin
 
 ADMIN_PASSWORD = "correct-horse-battery-staple"
 
@@ -345,20 +345,34 @@ def test_rate_limiter_prunes_empty_keys() -> None:
     assert key not in limiter._failures
 
 
+def test_rate_limiter_memory_sweep() -> None:
+    now = 1000.0
+    limiter = LoginRateLimiter(
+        window_seconds=60.0, max_keys=10, clock=lambda: now
+    )
+    for i in range(15):
+        limiter.record_failure((f"192.168.1.{i}", "admin"))
+
+    assert len(limiter._failures) <= 10
+
+    # Advance time to expire earlier keys
+    now += 65.0
+    limiter.record_failure(("192.168.1.99", "admin"))
+    assert len(limiter._failures) <= 10
+
+
+def test_password_verifier_caching(app) -> None:
+    verifier = app.extensions["password_verifier"]
+    assert verifier.verify("admin", ADMIN_PASSWORD)
+    # Second check should hit the verification cache
+    assert verifier.verify("admin", ADMIN_PASSWORD)
+
+    verifier.invalidate_cache("admin")
+    assert verifier.verify("admin", ADMIN_PASSWORD)
+
+
 def test_reader_user_cannot_access_admin_dashboard(migrated_client) -> None:
-    from argon2 import PasswordHasher
-
-    from bookflow.database.database import session_scope
-    from bookflow.database.models import User
-
-    with session_scope() as session:
-        session.add(
-            User(
-                username="reader1",
-                password_hash=PasswordHasher().hash("readerpass"),
-                is_admin=False,
-            )
-        )
+    create_user("reader1", "readerpass", is_admin=False)
 
     resp = login_admin(migrated_client, username="reader1", password="readerpass")
     assert resp.status_code == 403

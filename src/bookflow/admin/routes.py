@@ -8,7 +8,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import NotRequired, TypedDict
 
-from argon2 import PasswordHasher
 from flask import (
     Blueprint,
     Response,
@@ -21,10 +20,11 @@ from flask import (
     session,
     url_for,
 )
-from sqlalchemy import ColumnElement, func, select
+from sqlalchemy import ColumnElement, case, func, select
 from sqlalchemy.exc import OperationalError
 
 from bookflow.auth.decorators import login_required, require_csrf
+from bookflow.auth.service import DEFAULT_HASHER, USER_ID_SESSION_KEY
 from bookflow.config import Settings
 from bookflow.database.database import session_scope
 from bookflow.database.models import (
@@ -210,7 +210,7 @@ def library_tree(folder_id: int) -> str:
     books = [
         {
             "id": row.id,
-            "name": row.relative_path,
+            "name": row.relative_path.rsplit("/", 1)[-1],
             "format": row.file_format,
             "size": row.file_size,
         }
@@ -298,7 +298,7 @@ def users() -> str:
     return render_template(
         "users.html",
         users=user_list,
-        current_user_id=session.get("user_id"),
+        current_user_id=session.get(USER_ID_SESSION_KEY),
     )
 
 
@@ -368,10 +368,9 @@ def user_create() -> str | Response | tuple[str, int]:
                 400,
             )
 
-        hasher = PasswordHasher()
         new_user = User(
             username=username,
-            password_hash=hasher.hash(password),
+            password_hash=DEFAULT_HASHER.hash(password),
             is_admin=is_admin,
         )
         db.add(new_user)
@@ -393,9 +392,12 @@ def user_change_password(user_id: int) -> Response:
         user = db.get(User, user_id)
         if user is None:
             abort(404)
-        hasher = PasswordHasher()
-        user.password_hash = hasher.hash(password)
+        user.password_hash = DEFAULT_HASHER.hash(password)
         username = user.username
+
+    verifier = current_app.extensions.get("password_verifier")
+    if verifier is not None:
+        verifier.invalidate_cache(username)
 
     flash(f"Password for user '{username}' has been updated.", "ok")
     return redirect(url_for("admin.users"))
@@ -405,7 +407,7 @@ def user_change_password(user_id: int) -> Response:
 @login_required
 def user_delete(user_id: int) -> Response:
     """Delete a user account."""
-    current_uid = session.get("user_id")
+    current_uid = session.get(USER_ID_SESSION_KEY)
     if current_uid is not None and current_uid == user_id:
         flash("You cannot delete your own account.", "error")
         return redirect(url_for("admin.users"))
@@ -428,6 +430,10 @@ def user_delete(user_id: int) -> Response:
 
         username = user.username
         db.delete(user)
+
+    verifier = current_app.extensions.get("password_verifier")
+    if verifier is not None:
+        verifier.invalidate_cache(username)
 
     flash(f"User '{username}' has been deleted.", "ok")
     return redirect(url_for("admin.users"))
@@ -563,26 +569,35 @@ def _empty_dashboard_stats() -> DashboardStats:
 
 def _query_stats() -> DashboardStats:
     with session_scope() as session:
-        books = session.scalar(select(func.count(Book.id))) or 0
-        folders = session.scalar(select(func.count(LibraryFolder.id))) or 0
-        total_size = session.scalar(
-            select(func.coalesce(func.sum(Book.file_size), 0))
-        ) or 0
-        scan_errors = (
-            session.scalar(
-                select(func.count(LibraryFolder.id)).where(
-                    LibraryFolder.last_scan_status.notin_(["ok"])
-                )
+        books, total_size = session.execute(
+            select(
+                func.count(Book.id),
+                func.coalesce(func.sum(Book.file_size), 0),
             )
-            or 0
-        )
-        last_scan = session.scalar(select(func.max(LibraryFolder.last_scan_at)))
-        latest = session.scalar(
-            select(LibraryFolder)
+        ).one()
+        folders, scan_errors = session.execute(
+            select(
+                func.count(LibraryFolder.id),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (LibraryFolder.last_scan_status.notin_(["ok"]), 1),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ),
+            )
+        ).one()
+        latest = session.execute(
+            select(
+                LibraryFolder.last_scan_at,
+                LibraryFolder.last_scan_duration,
+            )
             .where(LibraryFolder.last_scan_at.is_not(None))
             .order_by(LibraryFolder.last_scan_at.desc())
             .limit(1)
-        )
+        ).first()
         cache: dict[str, int] = {"x3": 0, "x4": 0}
         for row in session.execute(
             select(
@@ -592,11 +607,11 @@ def _query_stats() -> DashboardStats:
         ):
             cache[row[0]] = int(row[1])
     return {
-        "books": int(books),
-        "folders": int(folders),
-        "total_size": int(total_size),
-        "last_scan": last_scan,
-        "last_scan_duration": latest.last_scan_duration if latest else None,
-        "scan_errors": int(scan_errors),
+        "books": int(books or 0),
+        "folders": int(folders or 0),
+        "total_size": int(total_size or 0),
+        "last_scan": latest[0] if latest else None,
+        "last_scan_duration": latest[1] if latest else None,
+        "scan_errors": int(scan_errors or 0),
         "cache": cache,
     }

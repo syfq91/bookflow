@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from datetime import timedelta
 
-from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
 from flask import Flask, Response, jsonify, redirect, request, session, url_for
 from sqlalchemy import select
@@ -15,7 +14,13 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from bookflow.admin.routes import bp as admin_bp
 from bookflow.auth.routes import bp as auth_bp
-from bookflow.auth.service import LoginRateLimiter, PasswordVerifier, ensure_csrf_token
+from bookflow.auth.service import (
+    ADMIN_SESSION_KEY,
+    DEFAULT_HASHER,
+    LoginRateLimiter,
+    PasswordVerifier,
+    ensure_csrf_token,
+)
 from bookflow.config import Settings, resolve_session_secret
 from bookflow.database.database import init_engine, session_scope
 from bookflow.database.models import User
@@ -35,20 +40,19 @@ def ensure_admin_user(settings: Settings) -> None:
             admin = session.scalar(
                 select(User).where(User.username == settings.admin_username)
             )
-            hasher = PasswordHasher()
             if admin is None:
                 session.add(
                     User(
                         username=settings.admin_username,
-                        password_hash=hasher.hash(settings.admin_password),
+                        password_hash=DEFAULT_HASHER.hash(settings.admin_password),
                         is_admin=True,
                     )
                 )
             else:
                 try:
-                    hasher.verify(admin.password_hash, settings.admin_password)
+                    DEFAULT_HASHER.verify(admin.password_hash, settings.admin_password)
                 except (InvalidHashError, VerificationError):
-                    admin.password_hash = hasher.hash(settings.admin_password)
+                    admin.password_hash = DEFAULT_HASHER.hash(settings.admin_password)
                     admin.is_admin = True
     except SQLAlchemyError:
         pass
@@ -56,7 +60,7 @@ def ensure_admin_user(settings: Settings) -> None:
 
 def _is_admin() -> bool:
     """Jinja global: is the current session signed in as the admin?"""
-    return bool(session.get("admin"))
+    return bool(session.get(ADMIN_SESSION_KEY))
 
 
 def _configure_logging(level_name: str) -> None:
@@ -108,7 +112,9 @@ def create_app(settings: Settings | None = None) -> Flask:
         # the login rate limiter keys on. Never enable this when BookFlow
         # is reachable directly — clients can forge the header.
         app.wsgi_app = ProxyFix(
-            app.wsgi_app, x_for=settings.trusted_proxy_hops
+            app.wsgi_app,
+            x_for=settings.trusted_proxy_hops,
+            x_proto=settings.trusted_proxy_hops,
         )
 
     app.extensions["password_verifier"] = PasswordVerifier(

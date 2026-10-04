@@ -25,7 +25,7 @@ _TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"\s+")
 
 
-@dataclass
+@dataclass(slots=True)
 class BookMetadata:
     """Metadata describing a single ebook file."""
 

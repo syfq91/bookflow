@@ -93,12 +93,7 @@ def update_publication_progression(book_id: int) -> Response:
             row.modified
         ):
             abort(409)
-        row.progression = document.progression
-        row.modified = _as_naive(document.modified)
-        row.device_id = document.device_id
-        row.device_name = document.device_name
-        row.title = document.title
-        row.references = document.references
+        _apply_progression_document(row, document)
         try:
             session.flush()
         except IntegrityError:
@@ -116,12 +111,7 @@ def update_publication_progression(book_id: int) -> Response:
             ):
                 abort(409)
             created = False
-            row.progression = document.progression
-            row.modified = _as_naive(document.modified)
-            row.device_id = document.device_id
-            row.device_name = document.device_name
-            row.title = document.title
-            row.references = document.references
+            _apply_progression_document(row, document)
             session.flush()
         body = json.dumps(_to_document(row))
     return Response(
@@ -239,6 +229,15 @@ def _to_document(row: Progression) -> dict[str, object]:
     if row.references is not None:
         document["references"] = row.references
     return document
+
+
+def _apply_progression_document(row: Progression, document: _Document) -> None:
+    row.progression = document.progression
+    row.modified = _as_naive(document.modified)
+    row.device_id = document.device_id
+    row.device_name = document.device_name
+    row.title = document.title
+    row.references = document.references
 
 
 def _format_timestamp(value: datetime) -> str:
