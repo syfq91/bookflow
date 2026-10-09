@@ -20,11 +20,19 @@ from bookflow.library.service import add_folder
 from bookflow.optimizer import service as optimizer_service
 from bookflow.optimizer.locks import profile_lock
 from bookflow.optimizer.service import clear_optimized_cache, optimize_book
-from factories import csrf_token, insert_books, login_admin, make_epub, make_pdf
+from factories import (
+    csrf_token,
+    insert_books,
+    login_admin,
+    make_cbz,
+    make_epub,
+    make_pdf,
+)
 
 PASSWORD = "opds-pass"
-EXTENSIONS = (".epub", ".pdf")
+EXTENSIONS = (".epub", ".pdf", ".cbz")
 EPUB_TYPE = "application/epub+zip"
+XTC_TYPE = "application/x-xtc"
 XML_TYPE = "application/xml"
 
 
@@ -92,6 +100,18 @@ def _library_book(root: Path, folder_id: int, title: str = "Dune") -> tuple[int,
     return _book_ids()[0], source
 
 
+def _library_cbz(
+    root: Path, folder_id: int, filename: str = "manga.cbz"
+) -> tuple[int, Path]:
+    source = root / filename
+    make_cbz(source, page_count=3)
+    _scan(folder_id)
+    with session_scope() as session:
+        book = session.scalar(select(Book).where(Book.relative_path == filename))
+        assert book is not None
+        return book.id, source
+
+
 def _clear_cache(client):
     return client.post(
         "/admin/cache/clear",
@@ -123,6 +143,49 @@ def test_x4_download_returns_optimized_epub(client, folder_id, root) -> None:
     assert resp.headers["Content-Type"] == EPUB_TYPE
     with zipfile.ZipFile(io.BytesIO(resp.data)) as archive:
         assert archive.read("mimetype") == b"application/epub+zip"
+
+
+def test_x3_download_returns_optimized_xtc(client, folder_id, root) -> None:
+    book_id, _source = _library_cbz(root, folder_id, "naruto.cbz")
+
+    resp = _get(client, f"/opdsx3/download/{book_id}")
+
+    assert resp.status_code == 200
+    assert resp.headers["Content-Type"] == XTC_TYPE
+    assert resp.headers["Content-Disposition"].startswith("attachment")
+    assert "naruto.xtc" in resp.headers["Content-Disposition"]
+    assert resp.data[:4] == b"XTC\x00"
+
+
+def test_x4_download_returns_optimized_xtc(client, folder_id, root) -> None:
+    book_id, _source = _library_cbz(root, folder_id, "naruto.cbz")
+
+    resp = _get(client, f"/opdsx4/download/{book_id}")
+
+    assert resp.status_code == 200
+    assert resp.headers["Content-Type"] == XTC_TYPE
+    assert resp.headers["Content-Disposition"].startswith("attachment")
+    assert "naruto.xtc" in resp.headers["Content-Disposition"]
+    assert resp.data[:4] == b"XTC\x00"
+
+
+def test_cbz_download_populates_cache_and_index(
+    client, app, folder_id, root
+) -> None:
+    book_id, source = _library_cbz(root, folder_id, "bleach.cbz")
+
+    resp = _get(client, f"/opdsx4/download/{book_id}")
+
+    assert resp.status_code == 200
+    cache_file = app.config["SETTINGS"].x4_cache_dir / f"{book_id}.xtc"
+    assert cache_file.is_file()
+    rows = _optimized_rows(book_id)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.profile == "x4"
+    assert row.source_mtime is not None and row.source_mtime > 0
+    assert row.source_size == source.stat().st_size
+    assert row.optimized_size == cache_file.stat().st_size
 
 
 def test_download_populates_cache_and_index(
@@ -578,3 +641,37 @@ def test_record_upsert_updates_existing_row(app, folder_id, root) -> None:
         assert row is not None
         assert row.source_mtime == 150
         assert row.source_size == 250
+
+
+def test_cbz_clear_cache_removes_xtc(client, app, folder_id, root) -> None:
+    book_id, _source = _library_cbz(root, folder_id, "clear_test.cbz")
+    assert _get(client, f"/opdsx4/download/{book_id}").status_code == 200
+    cache_file = app.config["SETTINGS"].x4_cache_dir / f"{book_id}.xtc"
+    assert cache_file.is_file()
+    assert len(_optimized_rows(book_id)) == 1
+
+    login_admin(client, password=PASSWORD)
+    resp = _clear_cache(client)
+    assert resp.status_code == 302
+    assert not cache_file.exists()
+    assert _optimized_rows(book_id) == []
+
+
+def test_cbz_scan_prunes_cache_files_of_removed_books(
+    client, app, folder_id, root
+) -> None:
+    book_id, source = _library_cbz(root, folder_id, "prune_test.cbz")
+    assert _get(client, f"/opdsx4/download/{book_id}").status_code == 200
+    cache_file = app.config["SETTINGS"].x4_cache_dir / f"{book_id}.xtc"
+    assert cache_file.is_file()
+
+    source.unlink()
+    login_admin(client, password=PASSWORD)
+    resp = client.post(
+        f"/admin/folders/{folder_id}/scan",
+        data={"csrf_token": csrf_token(client)},
+    )
+    assert resp.status_code == 302
+    assert not cache_file.exists()
+    assert _optimized_rows(book_id) == []
+

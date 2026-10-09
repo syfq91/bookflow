@@ -125,17 +125,17 @@ only then answers with its own error document. The same applies to
 | `/opds/search?q=…`    | Search across title, authors, description, series, publisher, ISBN |
 | `/opds/books/<id>`    | Feed for a single book                                |
 | `/opds/download/<id>` | The book file itself (attachment)                     |
-| `/opds/cover/<id>`    | Cover image extracted from the EPUB on demand (`404` when absent) |
+| `/opds/cover/<id>`    | Cover image extracted from the EPUB or CBZ on demand (`404` when absent) |
 | `/opdsx3`            | X3 catalog root: the folder view with X3-optimized acquisitions, plus Search |
-| `/opdsx3/books?page=N`, `/opdsx3/recent?page=N` | Flat feeds of the X3 catalog, EPUBs via the X3 download |
+| `/opdsx3/books?page=N`, `/opdsx3/recent?page=N` | Flat feeds of the X3 catalog, EPUBs and CBZs via the X3 download |
 | `/opdsx3/authors`, `/opdsx3/authors/<name>`, `/opdsx3/search?q=…` | Author index, author feed and search for the X3 catalog |
 | `/opdsx3/books/<id>` | Single-book feed in the X3 catalog                    |
-| `/opdsx3/download/<id>` | EPUB optimized for the Xteink X3 (on demand, cached) |
-| `/opdsx3/folders`, `/opdsx3/folders/<id>?path=…` | The folder hierarchy with X3-optimized EPUB acquisitions |
+| `/opdsx3/download/<id>` | EPUB or XTC (from CBZ) optimized for the Xteink X3 (on demand, cached) |
+| `/opdsx3/folders`, `/opdsx3/folders/<id>?path=…` | The folder hierarchy with X3-optimized acquisitions |
 | `/opdsx4`            | X4 catalog root: same as `/opdsx3`                  |
 | `/opdsx4/books`, `/opdsx4/recent`, `/opdsx4/authors`, `/opdsx4/search`, `/opdsx4/folders`, `/opdsx4/folders/<id>?path=…` | The X3 URLs above with X4 acquisitions |
 | `/opdsx4/books/<id>` | Single-book feed in the X4 catalog                    |
-| `/opdsx4/download/<id>` | EPUB optimized for the Xteink X4 (on demand, cached) |
+| `/opdsx4/download/<id>` | EPUB or XTC (from CBZ) optimized for the Xteink X4 (on demand, cached) |
 | `/opds/publications/<id>/progression` | Reading position per OPDS Progression 1.0: `GET` reads, `PUT` updates (`application/opds-progression+json`); conflicts are `409` problem details — full client docs below |
 
 The roots (`/opds`, `/opdsx3`, `/opdsx4`) all open straight into the folder
@@ -146,9 +146,9 @@ URL-only — the root already is the folder view. Every feed, not just the
 roots, advertises the catalog's search template with `rel="search"`, so
 clients that refresh the link per feed never lose search mid-browse. The
 X3/X4 catalogs contain the full library and mirror the original catalog's
-structure section for section; only EPUB entries differ — they use the
-device's optimized download, while other formats fall back to the original
-file so no acquisition link is ever broken.
+structure section for section; EPUB entries use optimized EPUB downloads
+and CBZ entries use optimized XTC downloads (`application/x-xtc`), while
+other formats fall back to the original file so no acquisition link is ever broken.
 
 Folder feeds mirror the library's directory tree from the index — they read
 `books.relative_path` only and never touch the filesystem, so an unknown
@@ -156,12 +156,13 @@ Folder feeds mirror the library's directory tree from the index — they read
 level (deeper trees are still reachable through `path` directly).
 
 Optimization runs only when an X3/X4 download is requested — never during
-scans or startup — using a vendored copy of the
-[epubkit](https://github.com/b1rdmania/epubkit) pipeline. Results are cached
-under `data/cache/optimized/{x3,x4}/` and rebuilt automatically when the
-source file changes. The original library files are never modified. The
-dashboard's **Clear cache** action empties the cache and its index rows;
-the next X3/X4 download regenerates the EPUB on demand. A scan or a
+scans or startup — using vendored copies of the
+[epubkit](https://github.com/b1rdmania/epubkit) pipeline (for EPUBs) and the
+[cbz2xtc](https://github.com/donutboyy/cbz2xtc) pipeline (for CBZ comics). Results
+are cached under `data/cache/optimized/{x3,x4}/` (`<id>.epub` and `<id>.xtc`) and
+rebuilt automatically when the source file changes. The original library files are
+never modified. The dashboard's **Clear cache** action empties the cache and its
+index rows; the next X3/X4 download regenerates on demand. A scan or a
 folder removal also drops the cached renditions of the books that left
 the index, and clearing never disturbs a download that is being optimized
 at that moment.

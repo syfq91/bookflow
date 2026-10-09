@@ -211,8 +211,26 @@ def _strip_html(value: str) -> str:
 # --- covers ----------------------------------------------------------------
 
 
+_COVER_IMAGE_EXTS = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+}
+
+
 def extract_cover(path: Path) -> tuple[bytes, str] | None:
-    """Return the EPUB cover as ``(image_bytes, media_type)``, or None."""
+    """Return the book cover as ``(image_bytes, media_type)``, or None."""
+    suffix = path.suffix.lower()
+    if suffix == ".epub":
+        return _extract_epub_cover(path)
+    if suffix == ".cbz":
+        return _extract_cbz_cover(path)
+    return None
+
+
+def _extract_epub_cover(path: Path) -> tuple[bytes, str] | None:
     try:
         with zipfile.ZipFile(path) as archive:
             opf_path = _opf_path(archive)
@@ -228,6 +246,28 @@ def extract_cover(path: Path) -> tuple[bytes, str] | None:
             return archive.read(target), cover[1]
     except Exception:  # a bad file must never abort a request
         logger.debug("cover extraction failed for %s", path, exc_info=True)
+        return None
+
+
+def _extract_cbz_cover(path: Path) -> tuple[bytes, str] | None:
+    try:
+        with zipfile.ZipFile(path) as archive:
+            entries = sorted(
+                name
+                for name in archive.namelist()
+                if Path(name).suffix.lower() in _COVER_IMAGE_EXTS
+                and not name.lower().startswith("__macosx")
+                and not Path(name).name.startswith(".")
+            )
+            if not entries:
+                return None
+            first = entries[0]
+            media_type = _COVER_IMAGE_EXTS.get(
+                Path(first).suffix.lower(), "image/jpeg"
+            )
+            return archive.read(first), media_type
+    except Exception:
+        logger.debug("CBZ cover extraction failed for %s", path, exc_info=True)
         return None
 
 

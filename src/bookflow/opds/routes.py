@@ -540,9 +540,9 @@ _cover_cache_lock = threading.Lock()
 
 @bp.get("/opds/cover/<int:book_id>")
 def cover(book_id: int) -> Response:
-    """Serve the extracted cover image for an EPUB."""
+    """Serve the extracted cover image for an EPUB or CBZ."""
     target = book_file(book_id)
-    if target.suffix.lower() != ".epub":
+    if target.suffix.lower() not in (".epub", ".cbz"):
         abort(404)
 
     stat = target.stat()
@@ -821,7 +821,8 @@ def _acquisition_response(
 
 def _optimized_download(book_id: int, profile: str) -> Response:
     source = book_file(book_id)
-    if source.suffix.lower() != ".epub":
+    suffix = source.suffix.lower()
+    if suffix not in (".epub", ".cbz"):
         abort(404)
     try:
         optimized = optimize_book(book_id, profile, source)
@@ -830,7 +831,8 @@ def _optimized_download(book_id: int, profile: str) -> Response:
             500,
             description="The optimized publication could not be generated.",
         )
-    return send_book_response(optimized, download_name=source.name)
+    target_name = source.stem + (".xtc" if suffix == ".cbz" else ".epub")
+    return send_book_response(optimized, download_name=target_name)
 
 
 def _search_condition(query: str) -> ColumnElement[bool]:

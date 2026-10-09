@@ -16,6 +16,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from bookflow.config import Settings
 from bookflow.database.database import session_scope
 from bookflow.database.models import OptimizedBook
+from bookflow.optimizer.cbz2xtc import ConvertOptions, convert_cbz_to_xtc
 from bookflow.optimizer.epubkit import ProcessingOptions, process_epub
 from bookflow.optimizer.locks import profile_lock
 
@@ -44,9 +45,10 @@ def optimize_book(book_id: int, profile: str, source: Path) -> Path:
     stat = source.stat()
     source_mtime = int(stat.st_mtime * 1000)
     source_size = stat.st_size
+    ext = ".xtc" if source.suffix.lower() == ".cbz" else ".epub"
 
     with profile_lock(book_id, profile):
-        cache_file = _cache_file(book_id, profile)
+        cache_file = _cache_file(book_id, profile, ext=ext)
         if _cache_is_valid(
             book_id, profile, cache_file, source_mtime, source_size
         ):
@@ -139,7 +141,7 @@ def _cache_dirs(settings: Settings) -> tuple[tuple[str, Path], ...]:
 
 def _book_id_of(path: Path) -> int | None:
     """The book id a cache file name encodes, or None for anything else."""
-    if path.suffix != ".epub":
+    if path.suffix not in (".epub", ".xtc"):
         return None
     try:
         return int(path.stem)
@@ -187,12 +189,12 @@ def _sweep_scratch(directory: Path) -> int:
     return removed
 
 
-def _cache_file(book_id: int, profile: str) -> Path:
+def _cache_file(book_id: int, profile: str, ext: str = ".epub") -> Path:
     settings = current_app.config["SETTINGS"]
     directory = (
         settings.x3_cache_dir if profile == "x3" else settings.x4_cache_dir
     )
-    return directory / f"{book_id}.epub"
+    return directory / f"{book_id}{ext}"
 
 
 def _cache_is_valid(
@@ -227,24 +229,47 @@ def _generate(
     cache_file.parent.mkdir(parents=True, exist_ok=True)
     tmp_dir = cache_file.parent / ".tmp"
     tmp_dir.mkdir(parents=True, exist_ok=True)
-    tmp_file = tmp_dir / f"{uuid.uuid4().hex}.epub"
+    tmp_file = tmp_dir / f"{uuid.uuid4().hex}{cache_file.suffix}"
     with _scratch_guard:
         _scratch_running.add(tmp_file)
     try:
-        report = process_epub(
-            str(source),
-            str(tmp_file),
-            options=ProcessingOptions(device=profile),
-        )
-        if not report.success:
-            logger.warning(
-                "optimization failed for book_id=%d source=%s profile=%s: %s",
-                book_id,
-                source.name,
-                profile,
-                report.error or "unknown error",
+        suffix = source.suffix.lower()
+        if suffix == ".epub":
+            report = process_epub(
+                str(source),
+                str(tmp_file),
+                options=ProcessingOptions(device=profile),
             )
-            raise OptimizationError(report.error or "optimization failed")
+            if not report.success:
+                logger.warning(
+                    "optimization failed for book_id=%d source=%s profile=%s: %s",
+                    book_id,
+                    source.name,
+                    profile,
+                    report.error or "unknown error",
+                )
+                raise OptimizationError(report.error or "optimization failed")
+        elif suffix == ".cbz":
+            target_width = 480 if profile == "x4" else 528
+            target_height = 800 if profile == "x4" else 792
+            opts = ConvertOptions(
+                target_width=target_width,
+                target_height=target_height,
+                dither=True,
+            )
+            success, error = convert_cbz_to_xtc(source, tmp_file, options=opts)
+            if not success:
+                logger.warning(
+                    "CBZ optimization failed for book_id=%d source=%s profile=%s: %s",
+                    book_id,
+                    source.name,
+                    profile,
+                    error or "unknown error",
+                )
+                raise OptimizationError(error or "optimization failed")
+        else:
+            raise OptimizationError(f"unsupported format: {suffix}")
+
         if not tmp_file.is_file() or tmp_file.stat().st_size == 0:
             raise OptimizationError("optimizer produced no output")
         tmp_file.replace(cache_file)

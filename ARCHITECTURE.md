@@ -27,10 +27,10 @@ with on-demand device optimization and multi-user reading progression.
       OPDS        OPDS X3      OPDS X4
         │            │            │
      original   on-demand     on-demand
-        │        epubkit       epubkit
+        │     epubkit/cbz2xtc epubkit/cbz2xtc
         ▼            ▼            ▼
      source       cache        cache
-      EPUB         EPUB         EPUB
+   EPUB / CBZ   EPUB / XTC   EPUB / XTC
 ```
 
 Three rules define the system:
@@ -40,7 +40,7 @@ Three rules define the system:
    library is never written to, renamed, or deleted.
 2. **Optimization is strictly on-demand.** Only a request to
    `/opdsx3/download/<id>` or `/opdsx4/download/<id>` may invoke the
-   epubkit pipeline — never scanning, startup, or background jobs.
+   epubkit or cbz2xtc pipelines — never scanning, startup, or background jobs.
 3. **Multi-user authentication, single surface.** Admin and reader users in
    SQLite (session cookie for `/admin`, HTTP Basic for `/opds`, `/opdsx3`
    and `/opdsx4`), with reading progression tracked per user per book
@@ -56,7 +56,7 @@ Three rules define the system:
 | Passwords    | argon2-cffi (Argon2id, SQLite stored password hashes) |
 | EPUB parse   | stdlib `zipfile` + `xml.etree`                      |
 | PDF parse    | pypdf                                               |
-| Optimization | vendored epubkit pipeline (Pillow, lxml, cssutils)  |
+| Optimization | vendored epubkit (EPUB) & cbz2xtc (CBZ→XTC) (Pillow, lxml, cssutils) |
 | XML feeds    | stdlib `xml.etree.ElementTree`                      |
 | Prod server  | gunicorn                                            |
 | Quality      | pytest, ruff (`E,F,I,UP,B,C4,SIM,RUF059`, 88 cols)  |
@@ -104,10 +104,11 @@ bookflow/
 │   │   ├── auth.py               HTTP Basic + OPDS Authentication Document
 │   │   └── progression.py        OPDS Progression 1.0 GET/PUT
 │   │
-│   ├── optimizer/                device-specific EPUB cache
+│   ├── optimizer/                device-specific EPUB/XTC cache
 │   │   ├── service.py            optimize_book(), cache clear + prune
 │   │   ├── locks.py              per-book locks (profile + progression)
-│   │   └── epubkit/              vendored pipeline (see NOTICE)
+│   │   ├── epubkit/              vendored pipeline (see NOTICE)
+│   │   └── cbz2xtc/              vendored pipeline (see NOTICE)
 │   │
 │   ├── health/                   diagnostics
 │   │   └── service.py            component checks + library statistics
@@ -290,7 +291,8 @@ directory itself is treated as rebuildable.
     filename fallback when anything is missing or the file is
     corrupt.
   - PDF: embedded `pypdf` document info, same fallback.
-  - `extract_cover()` resolves the EPUB cover item to raw bytes — used
+  - CBZ: fallback title from filename; embedded first image used for covers.
+  - `extract_cover()` resolves the EPUB or CBZ cover item to raw bytes — used
     on demand by the OPDS cover endpoint, not stored in the index.
 
 ### 7.3 `opds/` — the catalog
@@ -323,9 +325,10 @@ directory itself is treated as rebuildable.
 - `generator.py` — pure builders over ElementTree: `navigation_feed()`,
   `acquisition_feed()`, `book_entry()`. Each entry carries acquisition,
   thumbnail/image, and progression links. With a device `profile`,
-  `_acquisition()` points EPUBs at `/opdsx3/download/<id>` or
-  `/opdsx4/download/<id>` and lets
-  other formats fall back to the original download so no link is broken.
+  `_acquisition()` points EPUBs (`application/epub+zip`) and CBZs
+  (`application/x-xtc`) at `/opdsx3/download/<id>` or
+  `/opdsx4/download/<id>`, and lets other formats fall back to the
+  original download so no link is broken.
 - `auth.py` — `authenticate()` verifies the Basic header against the shared
   `PasswordVerifier`, and `require_basic_auth()` is the `before_request`
   hook that applies it for a blueprint (with an optional `skip` endpoint);
@@ -347,40 +350,42 @@ directory itself is treated as rebuildable.
   - one `progressions` row per user per book — progression belongs to the
     logical book and user, never to a cache profile.
 
-### 7.4 `optimizer/` — on-demand device EPUBs
+### 7.4 `optimizer/` — on-demand device EPUBs and XTC comics
 
-- `service.optimize_book(book_id, profile, source)` — the whole §16 flow:
+- `service.optimize_book(book_id, profile, source)` — the on-demand generation flow:
   1. `source.stat()` → `source_mtime` (ms) + `source_size`;
   2. acquire `profile_lock(book_id, profile)` (module-level `threading.Lock`
      registry keyed by the pair — concurrent clients for the same book and
      profile serialize; different profiles/books run in parallel);
-  3. `_cache_is_valid()` — cache file exists **and** the `optimized_books`
-     row matches current mtime/size and the recorded `optimized_size`
-     equals the file on disk (a missing file simply reports invalid);
-  4. on miss: `_generate()` runs `process_epub(source → tmp)` into
-     `cache/<profile>/.tmp/<uuid>.epub`, verifies success + non-empty
-     output, then `os.replace()` atomically moves it to
-     `<book_id>.epub`; failures delete the temp file and raise
-     `OptimizationError` (→ HTTP `500` XML), never touching the source;
+  3. `_cache_is_valid()` — cache file (`<book_id>.epub` or `<book_id>.xtc`)
+     exists **and** the `optimized_books` row matches current mtime/size
+     and the recorded `optimized_size` equals the file on disk (a missing
+     file reports invalid);
+  4. on miss: `_generate()` dispatches on publication format:
+     - EPUB: runs `process_epub(source → tmp)` via `epubkit`
+     - CBZ: runs `convert_cbz_to_xtc(source → tmp)` via `cbz2xtc`
+     writes into `cache/<profile>/.tmp/<uuid>.<ext>`, verifies success +
+     non-empty output, then atomically moves it to `<book_id>.<ext>`;
+     failures delete the temp file and raise `OptimizationError` (→ HTTP
+     `500` XML), never touching the source;
   5. `_record()` upserts the `optimized_books` row.
-- `service.clear_optimized_cache()` — §28 admin action: empties both cache
-  directories and deletes all index rows; returns `(files, rows)`. The
-  `.tmp` directory itself is never removed and the scratch file of a
-  generation that is running right now is skipped (it is claimed while
-  `_generate()` works), so a concurrent download still finishes; stale
-  scratch files are swept, and every `<book_id>.epub` is unlinked under
-  its `profile_lock`. Sources are never touched; the next download
-  regenerates.
-- `service.prune_orphaned_cache()` — drops cached EPUBs whose
-  `optimized_books` row is gone (a row-less file is a miss), under the
-  same locks. The admin layer runs it after every scan and after a folder
-  removal, which is where books leave the index.
+- `service.clear_optimized_cache()` — admin action: empties both cache
+  directories (EPUB and XTC files) and deletes all index rows; returns
+  `(files, rows)`. Scratch files of active generations are skipped; stale
+  scratch files are swept. Sources are never touched.
+- `service.prune_orphaned_cache()` — drops cached EPUB and XTC files whose
+  `optimized_books` row is gone, under the same profile locks.
 - `epubkit/` — vendored copy of
   [b1rdmania/epubkit](https://github.com/b1rdmania/epubkit) (MIT, see
   `NOTICE`): `epub_processor.process_epub(input, output, options, …)` with
-  `ProcessingOptions(device="x3"|"x4")` profiles. FastAPI/web app and tests
-  from upstream were deliberately not vendored; the package is excluded
-  from ruff rules in `pyproject.toml`.
+  `ProcessingOptions(device="x3"|"x4")` profiles. Excluded from ruff rules
+  in `pyproject.toml`.
+- `cbz2xtc/` — vendored core conversion pipeline inspired by
+  [donutboyy/cbz2xtc](https://github.com/donutboyy/cbz2xtc) and
+  [tazua/cbz2xtc](https://github.com/tazua/cbz2xtc) (MIT, see `NOTICE`):
+  in-memory page extraction, spread splitting, LANCZOS aspect-ratio scaling,
+  Floyd-Steinberg dithering, C-level 1-bit scanline packing, and native XTC
+  binary container packaging. Excluded from ruff rules in `pyproject.toml`.
 
 ### 7.5 `health/` — diagnostics
 

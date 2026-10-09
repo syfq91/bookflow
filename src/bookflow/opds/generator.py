@@ -38,6 +38,7 @@ BOOK_MIME_TYPES = {
     ".cbr": "application/vnd.comicbook-rar",
     ".mobi": "application/x-mobipocket-ebook",
     ".azw3": "application/vnd.amazon.ebook",
+    ".xtc": "application/x-xtc",
 }
 DEFAULT_MIME_TYPE = "application/octet-stream"
 
@@ -133,7 +134,7 @@ def book_entry(book: Book, profile: str | None = None) -> ElementTree.Element:
             title="Download",
         ),
     )
-    if book.relative_path.lower().endswith(".epub"):
+    if book.relative_path.lower().endswith((".epub", ".cbz")):
         cover = url_for("opds.cover", book_id=book.id)
         _add_link(entry, Link(THUMBNAIL_REL, cover, "image/jpeg"))
         _add_link(entry, Link(IMAGE_REL, cover, "image/jpeg"))
@@ -149,9 +150,14 @@ def book_entry(book: Book, profile: str | None = None) -> ElementTree.Element:
 
 
 def _acquisition(book: Book, profile: str | None) -> tuple[str, str]:
-    if profile and book.relative_path.lower().endswith(".epub"):
-        endpoint = f"opds.{profile}_download"
-        return url_for(endpoint, book_id=book.id), "application/epub+zip"
+    if profile:
+        lower = book.relative_path.lower()
+        if lower.endswith(".epub"):
+            endpoint = f"opds.{profile}_download"
+            return url_for(endpoint, book_id=book.id), "application/epub+zip"
+        if lower.endswith(".cbz"):
+            endpoint = f"opds.{profile}_download"
+            return url_for(endpoint, book_id=book.id), "application/x-xtc"
     return (
         url_for("opds.download", book_id=book.id),
         book_mime_type(book.relative_path),

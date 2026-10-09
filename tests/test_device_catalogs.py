@@ -20,13 +20,14 @@ from factories import (
     feed_titles,
     insert_books,
     links_by_rel,
+    make_cbz,
     make_epub,
     make_pdf,
     parse_feed,
 )
 
 PASSWORD = "opds-pass"
-EXTENSIONS = (".epub", ".pdf")
+EXTENSIONS = (".epub", ".pdf", ".cbz")
 
 ATOM = "http://www.w3.org/2005/Atom"
 NS = {"a": ATOM}
@@ -399,3 +400,43 @@ def test_pdf_acquisition_link_from_device_feed_resolves(
 
     assert resp.status_code == 200
     assert resp.headers["Content-Type"] == "application/pdf"
+
+
+def test_cbz_acquisition_link_from_device_feed_resolves_and_rewrites(
+    client, folder_id, root
+) -> None:
+    make_cbz(root / "manga.cbz")
+    _scan(folder_id)
+    with session_scope() as session:
+        book = session.scalar(select(Book).where(Book.relative_path == "manga.cbz"))
+        assert book is not None
+        book_id = book.id
+
+    # In regular catalog:
+    regular_feed = parse_feed(_get(client, "/opds/books"))
+    reg_entry = [
+        e
+        for e in feed_entries(regular_feed)
+        if "manga" in (e.findtext("a:title", namespaces=NS) or "")
+    ][0]
+    reg_acq = links_by_rel(entry_links(reg_entry))["http://opds-spec.org/acquisition"][0]
+    assert reg_acq.get("href") == f"/opds/download/{book_id}"
+    assert reg_acq.get("type") == "application/vnd.comicbook+zip"
+
+    # In x4 device catalog:
+    x4_feed = parse_feed(_get(client, "/opdsx4/books"))
+    x4_entry = [
+        e
+        for e in feed_entries(x4_feed)
+        if "manga" in (e.findtext("a:title", namespaces=NS) or "")
+    ][0]
+    x4_acq = links_by_rel(entry_links(x4_entry))["http://opds-spec.org/acquisition"][0]
+    assert x4_acq.get("href") == f"/opdsx4/download/{book_id}"
+    assert x4_acq.get("type") == "application/x-xtc"
+
+    # Follow the acquisition link
+    resp = _get(client, x4_acq.get("href"))
+    assert resp.status_code == 200
+    assert resp.headers["Content-Type"] == "application/x-xtc"
+    assert resp.data[:4] == b"XTC\x00"
+

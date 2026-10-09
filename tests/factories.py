@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import io
 import mimetypes
 import secrets
 import zipfile
@@ -11,6 +12,7 @@ from xml.etree import ElementTree
 
 from alembic.config import Config
 from flask import Response
+from PIL import Image
 from pypdf import PdfWriter
 
 from bookflow.database.database import session_scope
@@ -129,6 +131,24 @@ def make_pdf(path: Path, *, title: str | None = None, author: str | None = None)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("wb") as handle:
         writer.write(handle)
+    return path
+
+
+def make_cbz(
+    path: Path,
+    *,
+    page_count: int = 2,
+    width: int = 400,
+    height: int = 600,
+) -> Path:
+    """Write a minimal CBZ carrying synthetic test images."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(path, "w") as archive:
+        for i in range(page_count):
+            img = Image.new("RGB", (width, height), color=(i * 40, i * 40, i * 40))
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=80)
+            archive.writestr(f"page_{i + 1:03d}.jpg", buf.getvalue())
     return path
 
 

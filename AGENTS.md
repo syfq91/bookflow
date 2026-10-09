@@ -93,16 +93,16 @@ pkill -f "[f]lask --app bookflow.app run"
 1. **The library is read-only.** No code may write, rename, or delete
    anything under a registered folder. All writes go to SQLite and
    `data/cache/`.
-2. **Optimization is on-demand only.** epubkit runs exclusively inside
-   `optimize_book()`, reached only from `/opdsx3|/opdsx4/download/<id>`.
-   Never call it from scanning, startup, routes, or background tasks.
+2. **Optimization is on-demand only.** epubkit and cbz2xtc run exclusively
+   inside `optimize_book()`, reached only from `/opdsx3|/opdsx4/download/<id>`.
+   Never call them from scanning, startup, routes, or background tasks.
 3. **Paths come from the DB, not the URL.** `book_file()` in
    `library/paths.py` is the single source of book paths and enforces
    root containment via `resolve()` + `is_relative_to`. Don't construct
    filesystem paths from user input anywhere else.
 4. **Cache is disposable, index must agree.** Cache files live at
-   `data/cache/optimized/{x3,x4}/<book_id>.epub`, written through
-   `.tmp/<uuid>.epub` + `os.replace()`, and validated against the
+   `data/cache/optimized/{x3,x4}/<book_id>.{epub,xtc}`, written through
+   `.tmp/<uuid>.<ext>` + `Path.replace()`, and validated against the
    `optimized_books` row (`source_mtime`, `source_size`,
    `optimized_size`). Writes to file and row happen together; readers
    treat any mismatch as a miss.
@@ -114,9 +114,10 @@ pkill -f "[f]lask --app bookflow.app run"
    `/admin` (admins only), HTTP Basic for `/opds` (all users), OPDS 401
    body is the Authentication Document. Never log passwords, cookies, or
    auth headers.
-7. **Vendored epubkit is third-party code** (`optimizer/epubkit/`, MIT —
-   keep `NOTICE`, keep the ruff per-file-ignores). Avoid editing it;
-   upstream it separately if the pipeline itself must change.
+7. **Vendored epubkit & cbz2xtc are third-party code** (`optimizer/epubkit/`
+   and `optimizer/cbz2xtc/`, MIT — keep `NOTICE`, keep the ruff
+   per-file-ignores). Avoid editing them; upstream them separately if the
+   pipelines themselves must change.
 8. **Non-goals:** no uploads, book delete/rename/move or metadata/cover
    editing, cloud storage, Calibre/Elasticsearch/Redis/Celery/K8s/
    microservices, a separate epubkit HTTP server, background or scheduled

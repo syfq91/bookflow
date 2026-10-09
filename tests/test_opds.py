@@ -26,13 +26,14 @@ from factories import (
     feed_titles,
     insert_books,
     links_by_rel,
+    make_cbz,
     make_epub,
     make_pdf,
     parse_feed,
 )
 
 PASSWORD = "opds-pass"
-EXTENSIONS = (".epub", ".pdf")
+EXTENSIONS = (".epub", ".pdf", ".cbz")
 
 ATOM = "http://www.w3.org/2005/Atom"
 NS = {"a": ATOM}
@@ -635,6 +636,34 @@ def test_cover_requires_auth(client, folder_id: int, root: Path) -> None:
     book_id = _book_ids()[0]
 
     assert client.get(f"/opds/cover/{book_id}").status_code == 401
+
+
+def test_cbz_serves_extracted_cover(client, folder_id: int, root: Path) -> None:
+    make_cbz(root / "manga.cbz", page_count=2)
+    _scan(folder_id)
+    book_id = _book_ids()[0]
+
+    resp = _get(client, f"/opds/cover/{book_id}")
+
+    assert resp.status_code == 200
+    assert resp.headers["Content-Type"] == "image/jpeg"
+    assert len(resp.data) > 0
+
+
+def test_cbz_entry_includes_cover_links(client, folder_id: int, root: Path) -> None:
+    make_cbz(root / "manga.cbz", page_count=2)
+    _scan(folder_id)
+    book_id = _book_ids()[0]
+
+    feed = parse_feed(_get(client, f"/opds/books/{book_id}"))
+    entry = feed_entries(feed)[0]
+    by_rel = links_by_rel(entry_links(entry))
+
+    assert THUMB_REL in by_rel
+    assert IMAGE_REL in by_rel
+    assert by_rel[THUMB_REL][0].get("href") == f"/opds/cover/{book_id}"
+    assert by_rel[IMAGE_REL][0].get("href") == f"/opds/cover/{book_id}"
+
 
 
 # --- errors -----------------------------------------------------------------

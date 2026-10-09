@@ -1,7 +1,7 @@
 # BookFlow
 
 A small, self-hosted OPDS server: point it at folders of ebooks, then read
-them from any OPDS client — with device-optimized EPUBs (Xteink X3/X4) and
+them from any OPDS client — with device-optimized EPUBs & XTC comics (Xteink X3/X4) and
 reading-position sync.
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) — how the code is organized
@@ -67,9 +67,10 @@ bare metal both default to `8000`). Authenticate with the admin
 credentials. The root feed opens straight into the folder tree (mirroring
 the directory layout) and links the flat feeds (`/opds/books`,
 `/opds/recent`, authors) as entries; every feed advertises search. The X3/X4
-device catalogs (`/opdsx3`, `/opdsx4`) open the same folder tree — only
-their EPUB downloads are optimized on demand and cached; other formats fall
-back to the original file. Reading positions sync via OPDS Progression
+device catalogs (`/opdsx3`, `/opdsx4`) open the same folder tree — their
+EPUB and CBZ downloads are optimized on demand (EPUBs formatted for device;
+CBZs converted to native XTC comics) and cached; other formats fall back
+to the original file. Reading positions sync via OPDS Progression
 (`/opds/publications/<id>/progression`) — the
 [endpoint table](REFERENCE.md#opds-catalog) and a
 [progression guide for client authors](REFERENCE.md#reading-progression-opds-progression-10)
