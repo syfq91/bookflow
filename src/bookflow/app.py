@@ -21,6 +21,7 @@ from bookflow.auth.service import (
     PasswordVerifier,
     ensure_csrf_token,
 )
+from bookflow.auto_scan import AutoScanner
 from bookflow.config import Settings, resolve_session_secret
 from bookflow.database.database import init_engine, session_scope
 from bookflow.database.models import User
@@ -166,5 +167,13 @@ def create_app(settings: Settings | None = None) -> Flask:
             if denied is not None:
                 return denied
         return document(error)
+
+    # Hourly rescan by default; OPDS_AUTO_SCAN_INTERVAL=0 turns it off. The
+    # thread is reachable at app.extensions["auto_scanner"] so tests can stop
+    # it, and it never runs without an explicit interval above zero.
+    if settings.auto_scan_interval > 0:
+        scanner = AutoScanner(app, settings.auto_scan_interval)
+        app.extensions["auto_scanner"] = scanner
+        scanner.start()
 
     return app

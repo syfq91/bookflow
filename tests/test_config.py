@@ -126,6 +126,49 @@ def test_log_level_unusable_values_stay_default(
     assert Settings.from_env().log_level == "INFO"
 
 
+def test_auto_scan_interval_defaults_to_an_hour(monkeypatch, tmp_path: Path) -> None:
+    for key in list(os.environ):
+        if key.startswith("OPDS_"):
+            monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("OPDS_DATA_DIR", str(tmp_path / "data"))
+
+    assert Settings.from_env().auto_scan_interval == 3600
+    assert Settings(
+        data_dir=tmp_path / "d",
+        database_url="sqlite://",
+        session_secret="",
+        admin_username="admin",
+        admin_password="",
+    ).auto_scan_interval == 3600
+
+
+def test_auto_scan_interval_env_override(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("OPDS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("OPDS_AUTO_SCAN_INTERVAL", "120")
+
+    assert Settings.from_env().auto_scan_interval == 120
+
+
+@pytest.mark.parametrize("value", ["0", "off", "OFF", "false", "disabled"])
+def test_auto_scan_interval_env_disables_scanning(
+    monkeypatch, tmp_path: Path, value: str
+) -> None:
+    monkeypatch.setenv("OPDS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("OPDS_AUTO_SCAN_INTERVAL", value)
+
+    assert Settings.from_env().auto_scan_interval == 0
+
+
+@pytest.mark.parametrize("value", ["", "hourly", "30 minutes"])
+def test_auto_scan_interval_unusable_values_stay_default(
+    monkeypatch, tmp_path: Path, value: str
+) -> None:
+    monkeypatch.setenv("OPDS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("OPDS_AUTO_SCAN_INTERVAL", value)
+
+    assert Settings.from_env().auto_scan_interval == 3600
+
+
 def test_derived_cache_paths(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     settings = Settings(

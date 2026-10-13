@@ -75,6 +75,7 @@ bookflow/
 ├── src/bookflow/
 │   ├── app.py                    application factory + / → /admin/ + /healthz
 │   ├── wsgi.py                   module-level app for gunicorn
+│   ├── auto_scan.py              background rescan of every folder on a timer
 │   ├── config.py                 frozen Settings dataclass (env → values)
 │   │
 │   ├── database/
@@ -153,6 +154,12 @@ epubkit integration is a package `optimizer/epubkit/` rather than a single
 9. Register four blueprints: `auth`, `admin`, `opds`, `progression`.
 10. `GET /` → `302` to `/admin/` (convenience redirect for the browser).
 11. `GET /healthz` → `{"status": "ok"}` (public liveness probe).
+12. `AutoScanner(app, settings.auto_scan_interval).start()` when the
+    interval is above zero (`OPDS_AUTO_SCAN_INTERVAL`, default hourly;
+    `0` disables) — a daemon thread that rescans every folder shortly
+    after boot and then on the period. The thread is kept at
+    `app.extensions["auto_scanner"]` so tests can stop it; it never starts
+    in the test suite, whose `settings` fixture sets the interval to `0`.
 
 Production servers build the app through `bookflow.wsgi`, whose
 module-level `app = create_app()` is what `gunicorn
@@ -174,6 +181,7 @@ environment variable with a default (see `.env.example`):
 | `OPDS_ADMIN_USERNAME` / `OPDS_ADMIN_PASSWORD` | `admin` / *(empty)* | empty password → OPDS returns `503` |
 | `OPDS_SESSION_COOKIE_SECURE` | `false` | enable behind HTTPS |
 | `OPDS_SCAN_EXTENSIONS` | `.epub,.pdf,.cbz,.cbr,.mobi,.azw3` | scanner scope |
+| `OPDS_AUTO_SCAN_INTERVAL` | `3600` | seconds between background rescans of every folder; `0`/`off` disables |
 | `OPDS_BROWSE_ROOT` | `/` | root the admin folder browser is clamped to (typed paths unaffected) |
 | `OPDS_TRUSTED_PROXY_HOPS` | `0` | reverse proxies in front of the app; `> 0` rewrites `request.remote_addr` from `X-Forwarded-For` (login rate limiter behind a proxy) |
 | `OPDS_LOG_LEVEL` | `INFO` | root logger level applied by `create_app`; a stderr handler is added only when the process has none |
@@ -417,6 +425,25 @@ directory itself is treated as rebuildable.
 - There is deliberately **no** upload, delete, rename, move, or metadata
   editing — the UI is a control surface, not a file manager.
 
+### 7.7 `auto_scan.py` — periodic rescan
+
+- `AutoScanner(app, interval)` owns one **daemon thread** per process:
+  it waits `min(5s, interval)` after `start()`, runs one cycle, then
+  repeats every `interval` seconds until `stop()` (the `Event` is what
+  the wait blocks on, so shutdown is immediate).
+- A cycle takes an exclusive, non-blocking `flock` on
+  `data/.auto_scan.lock` — the process that does not get it skips the
+  cycle entirely (several gunicorn workers, one scan). Platforms
+  without `fcntl` simply scan.
+- It then calls the ordinary `library.scanner.scan_folder()` for every
+  `library_folders` row: same `ScanInProgress` guard (a folder already
+  being scanned manually is skipped), same read-only walk, same
+  `last_scan_*` bookkeeping, then `prune_orphaned_cache()` inside an app
+  context — matching what the admin **Scan** route does.
+- Failures are logged per folder and per cycle; a cycle that throws
+  (a database still being migrated, a folder vanishing mid-scan) never
+  kills the thread, the next interval retries.
+
 ## 8. HTTP surface
 
 ### Admin & auth
@@ -511,6 +538,10 @@ per-folder scan locks (`library/scanner.py`) and the per-book locks in
 waiting optimizer re-checks the cache after acquiring it) and per book
 for the progression PUT's read→compare→write. SQLite is configured for
 multiple threads (`check_same_thread=False` + WAL-free default journal).
+Each process additionally runs one background rescan thread
+(`auto_scan.py`); a non-blocking `flock` on `data/.auto_scan.lock` lets
+exactly one worker perform a cycle, so several gunicorn workers never
+walk the library at the same time.
 
 **Error handling by surface.**
 
@@ -541,7 +572,7 @@ multiple threads (`check_same_thread=False` + WAL-free default journal).
 
 ## 11. Testing
 
-`tests/` (308 tests, `uv run pytest`):
+`tests/` (353 tests, `uv run pytest`):
 
 - `conftest.py` — temp `Settings` (fresh data dir + SQLite per test), the
   `build_app` factory (runs `alembic upgrade head` unless `migrate=False`,
@@ -554,8 +585,9 @@ multiple threads (`check_same_thread=False` + WAL-free default journal).
   helpers (`parse_feed`, `feed_entries`, `feed_titles`, `feed_links`,
   `entry_links`, `links_by_rel`).
 - Suite ↔ subsystem: `test_auth`, `test_library`, `test_scanner`,
-  `test_opds`, `test_progression`, `test_optimizer`, `test_health`,
-  `test_device_catalogs`, plus `test_app`/`test_config`/`test_database`.
+  `test_auto_scan`, `test_opds`, `test_progression`, `test_optimizer`,
+  `test_health`, `test_device_catalogs`, plus
+  `test_app`/`test_config`/`test_database`.
 - Recurring patterns: the shared feed helpers for parsing feeds and
   grouping links by `rel`; suite-local session helpers (Basic `_headers`,
   `_get`/`_put`, `_scan`); `insert_books()` for rows that don't need real

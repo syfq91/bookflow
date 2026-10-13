@@ -51,6 +51,10 @@ credentials work for the OPDS catalog (HTTP Basic). Until
 use **Browse…** to pick one. BookFlow only reads from it: registering
 indexes the folder immediately, **Scan** re-indexes it, and deleted files
 drop out of the index. Nothing is ever uploaded, renamed or modified.
+Folders are also rescanned automatically every hour (once shortly after
+start, then every `OPDS_AUTO_SCAN_INTERVAL` seconds) so files added while
+the server runs show up on their own; set `OPDS_AUTO_SCAN_INTERVAL=0` to
+scan manually only.
 
 **Browse and download** — **Library** lists the registered folders; each
 folder name opens an FTP-style browser over the index. Click down through

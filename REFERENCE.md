@@ -17,6 +17,7 @@ All settings come from environment variables (defaults in parentheses):
 | `OPDS_ADMIN_PASSWORD`       | *(empty)*   | Admin password                                     |
 | `OPDS_SESSION_COOKIE_SECURE` | `false`    | Set the session cookie `Secure` flag (behind HTTPS) |
 | `OPDS_SCAN_EXTENSIONS`      | `.epub,.pdf,.cbz,.cbr,.mobi,.azw3` | Comma-separated extensions the scanner indexes |
+| `OPDS_AUTO_SCAN_INTERVAL`   | `3600`     | Seconds between automatic rescans of every folder; `0` or `off` disables |
 | `OPDS_BROWSE_ROOT`          | `/`         | Root the admin folder browser (`Browse…` on Add Folder) is clamped to; typed paths are unaffected |
 | `OPDS_TRUSTED_PROXY_HOPS`   | `0`         | Reverse proxies in front of BookFlow; `> 0` takes the client address from `X-Forwarded-For` (see below) |
 | `OPDS_LOG_LEVEL`            | `INFO`      | Root logger level: `DEBUG`, `INFO`, `WARNING`, `ERROR` or `CRITICAL` (unusable values fall back to `INFO`) |
@@ -81,6 +82,15 @@ folder indexes it immediately, and **Scan** re-indexes it:
 - if a folder becomes unavailable, its index is kept and the scan is marked
   `error` until it returns
 - concurrent scans of the same folder are rejected with `409`
+
+**Automatic rescans.** BookFlow also re-indexes every registered folder on
+its own: once shortly after start, then every `OPDS_AUTO_SCAN_INTERVAL`
+seconds (default `3600`, one hour). It is the same read-only walk the
+**Scan** button performs, it respects the per-folder lock (a manual and an
+automatic scan never overlap), and `data/.auto_scan.lock` keeps multiple
+gunicorn workers from scanning twice at once — each cycle ends with a
+summary line in the log. Set `OPDS_AUTO_SCAN_INTERVAL=0` (or `off`) to
+scan manually only; an unusable value keeps the default.
 
 ### Users
 

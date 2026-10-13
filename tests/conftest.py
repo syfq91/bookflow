@@ -40,6 +40,9 @@ def settings(tmp_path: Path) -> Settings:
         session_secret="test-secret",
         admin_username="admin",
         admin_password="",
+        # Tests own their scans; a background thread would outlive the app
+        # and race reset_engine(). AutoScan suites opt back in.
+        auto_scan_interval=0,
     )
 
 

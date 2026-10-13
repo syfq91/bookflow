@@ -33,7 +33,25 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+_INTERVAL_OFF = ("0", "off", "false", "no", "disabled")
+
+
+def _env_interval(name: str, default: int) -> int:
+    """Read a period in seconds; ``0``/``off`` disables, junk falls back."""
+    value = os.environ.get(name)
+    if value is None or value == "":
+        return default
+    text = value.strip().lower()
+    if text in _INTERVAL_OFF:
+        return 0
+    try:
+        return max(int(text), 0)
+    except ValueError:
+        return default
+
+
 DEFAULT_SCAN_EXTENSIONS = (".epub", ".pdf", ".cbz", ".cbr", ".mobi", ".azw3")
+DEFAULT_AUTO_SCAN_INTERVAL = 3600
 
 LOG_LEVELS = ("CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG")
 DEFAULT_LOG_LEVEL = "INFO"
@@ -75,6 +93,8 @@ class Settings:
     admin_password: str
     session_cookie_secure: bool = False
     scan_extensions: tuple[str, ...] = DEFAULT_SCAN_EXTENSIONS
+    # OPDS_AUTO_SCAN_INTERVAL in seconds; 0 disables.
+    auto_scan_interval: int = DEFAULT_AUTO_SCAN_INTERVAL
     browse_root: Path = Path("/")
     trusted_proxy_hops: int = 0
     log_level: str = DEFAULT_LOG_LEVEL
@@ -108,6 +128,9 @@ class Settings:
             session_cookie_secure=_env_bool("OPDS_SESSION_COOKIE_SECURE", False),
             scan_extensions=_parse_extensions(
                 _env("OPDS_SCAN_EXTENSIONS", "")
+            ),
+            auto_scan_interval=_env_interval(
+                "OPDS_AUTO_SCAN_INTERVAL", DEFAULT_AUTO_SCAN_INTERVAL
             ),
             browse_root=(
                 Path(_env("OPDS_BROWSE_ROOT", "/")).expanduser().resolve()

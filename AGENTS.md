@@ -17,7 +17,7 @@ than greenfield work.
 ```bash
 uv sync                                   # install deps
 uv run ruff check .                       # lint (gate before every commit)
-uv run pytest -q                          # full suite: 308 tests, ~1 min
+uv run pytest -q                          # full suite: 353 tests
 uv run pytest -q tests/test_opds.py       # single file (seconds)
 uv run flask --app bookflow.app run --port 8000  # dev server (flask defaults to :5000)
 uv run alembic upgrade head               # apply migrations
@@ -145,6 +145,16 @@ pkill -f "[f]lask --app bookflow.app run"
   `data/.session_secret` when `OPDS_SESSION_SECRET` is unset (see
   `resolve_session_secret()`); the old shared dev literal no longer exists.
   Never log the file's contents.
+- The only background job is the rescan thread (`bookflow/auto_scan.py`):
+  one daemon thread per process when `OPDS_AUTO_SCAN_INTERVAL > 0`
+  (default `3600`, `0`/`off` disables), which just calls `scan_folder()`
+  for every folder and then `prune_orphaned_cache()` — never epubkit or
+  cbz2xtc. A cycle takes a non-blocking `flock` on
+  `data/.auto_scan.lock`, so gunicorn workers do not scan twice. The
+  shared `settings` fixture sets the interval to `0`, so no test app
+  spawns a thread; suites that want one (`tests/test_auto_scan.py`) build
+  an `auto_app` and must stop the scanner in teardown, or it outlives the
+  test and races `reset_engine()`.
 
 ## Git
 
