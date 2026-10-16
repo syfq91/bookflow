@@ -432,11 +432,11 @@ def test_cbz_acquisition_link_from_device_feed_resolves_and_rewrites(
     ][0]
     x4_acq = links_by_rel(entry_links(x4_entry))["http://opds-spec.org/acquisition"][0]
     assert x4_acq.get("href") == f"/opdsx4/download/{book_id}"
-    assert x4_acq.get("type") == "application/x-xtc"
+    assert x4_acq.get("type") == "application/vnd.xteink.xtc"
 
     # Follow the acquisition link
     resp = _get(client, x4_acq.get("href"))
     assert resp.status_code == 200
-    assert resp.headers["Content-Type"] == "application/x-xtc"
+    assert resp.headers["Content-Type"] == "application/vnd.xteink.xtc"
     assert resp.data[:4] == b"XTC\x00"
 

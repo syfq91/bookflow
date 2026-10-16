@@ -157,7 +157,7 @@ roots, advertises the catalog's search template with `rel="search"`, so
 clients that refresh the link per feed never lose search mid-browse. The
 X3/X4 catalogs contain the full library and mirror the original catalog's
 structure section for section; EPUB entries use optimized EPUB downloads
-and CBZ entries use optimized XTC downloads (`application/x-xtc`), while
+and CBZ entries use optimized XTC downloads (`application/vnd.xteink.xtc`), while
 other formats fall back to the original file so no acquisition link is ever broken.
 
 Folder feeds mirror the library's directory tree from the index — they read

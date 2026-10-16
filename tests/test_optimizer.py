@@ -32,7 +32,7 @@ from factories import (
 PASSWORD = "opds-pass"
 EXTENSIONS = (".epub", ".pdf", ".cbz")
 EPUB_TYPE = "application/epub+zip"
-XTC_TYPE = "application/x-xtc"
+XTC_TYPE = "application/vnd.xteink.xtc"
 XML_TYPE = "application/xml"
 
 

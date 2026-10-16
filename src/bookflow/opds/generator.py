@@ -38,7 +38,7 @@ BOOK_MIME_TYPES = {
     ".cbr": "application/vnd.comicbook-rar",
     ".mobi": "application/x-mobipocket-ebook",
     ".azw3": "application/vnd.amazon.ebook",
-    ".xtc": "application/x-xtc",
+    ".xtc": "application/vnd.xteink.xtc",
 }
 DEFAULT_MIME_TYPE = "application/octet-stream"
 
@@ -157,7 +157,7 @@ def _acquisition(book: Book, profile: str | None) -> tuple[str, str]:
             return url_for(endpoint, book_id=book.id), "application/epub+zip"
         if lower.endswith(".cbz"):
             endpoint = f"opds.{profile}_download"
-            return url_for(endpoint, book_id=book.id), "application/x-xtc"
+            return url_for(endpoint, book_id=book.id), "application/vnd.xteink.xtc"
     return (
         url_for("opds.download", book_id=book.id),
         book_mime_type(book.relative_path),

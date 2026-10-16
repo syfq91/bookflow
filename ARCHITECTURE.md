@@ -334,7 +334,7 @@ directory itself is treated as rebuildable.
   `acquisition_feed()`, `book_entry()`. Each entry carries acquisition,
   thumbnail/image, and progression links. With a device `profile`,
   `_acquisition()` points EPUBs (`application/epub+zip`) and CBZs
-  (`application/x-xtc`) at `/opdsx3/download/<id>` or
+  (`application/vnd.xteink.xtc`) at `/opdsx3/download/<id>` or
   `/opdsx4/download/<id>`, and lets other formats fall back to the
   original download so no link is broken.
 - `auth.py` — `authenticate()` verifies the Basic header against the shared
