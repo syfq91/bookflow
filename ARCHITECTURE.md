@@ -77,10 +77,12 @@ bookflow/
 │   ├── wsgi.py                   module-level app for gunicorn
 │   ├── auto_scan.py              background rescan of every folder on a timer
 │   ├── config.py                 frozen Settings dataclass (env → values)
+│   ├── constants.py              shared constants (PAGE_SIZE, limits)
+│   ├── utils.py                  time and timezone helper utilities
 │   │
 │   ├── database/
 │   │   ├── database.py           engine, session_scope, PRAGMAs, reset
-│   │   └── models.py             all four ORM tables
+│   │   └── models.py             ORM tables: folders, books, users, progressions, optimized, profiles
 │   │
 │   ├── auth/                     admin session authentication
 │   │   ├── service.py            PasswordVerifier, LoginRateLimiter, CSRF
@@ -89,7 +91,7 @@ bookflow/
 │   │
 │   ├── admin/                    operational UI (no file management)
 │   │   └── routes.py             dashboard, folders, library browser,
-│   │                             scan, download, cache clear, health
+│   │                             scan, download, cache clear, optimizer, health
 │   │
 │   ├── library/                  filesystem → index
 │   │   ├── service.py            register/list/remove folders
@@ -106,7 +108,7 @@ bookflow/
 │   │   └── progression.py        OPDS Progression 1.0 GET/PUT
 │   │
 │   ├── optimizer/                device-specific EPUB/XTC cache
-│   │   ├── service.py            optimize_book(), cache clear + prune
+│   │   ├── service.py            optimize_book(), cache clear + prune, profile config
 │   │   ├── locks.py              per-book locks (profile + progression)
 │   │   ├── epubkit/              vendored pipeline (see NOTICE)
 │   │   └── cbz2xtc/              vendored pipeline (see NOTICE)
@@ -116,11 +118,11 @@ bookflow/
 │   │
 │   ├── templates/                layout, login, dashboard, folders,
 │   │                             add_folder, browse_folders, library,
-│   │                             health, plus the shared partials
+│   │                             users, optimizer, health, plus the shared partials
 │   │                             _checks/_breadcrumbs/_rows
 │   └── static/style.css
 │
-└── tests/                        308 tests (see §11)
+└── tests/                        366 tests (see §11)
 ```
 
 Deliberate deviations from the originally sketched layout: every ORM model
@@ -381,6 +383,11 @@ directory itself is treated as rebuildable.
   directories (EPUB and XTC files) and deletes all index rows; returns
   `(files, rows)`. Scratch files of active generations are skipped; stale
   scratch files are swept. Sources are never touched.
+- `service.clear_profile_cache(profile)` — empties cache files and index
+  rows for a single profile when its configuration is modified in `/admin/optimizer`.
+- `service.get_device_profile_config(profile)` — queries `device_profiles`
+  in SQLite to dynamically supply resolution dimensions and image flags to
+  `ProcessingOptions` and `ConvertOptions`, with fallback defaults.
 - `service.prune_orphaned_cache()` — drops cached EPUB and XTC files whose
   `optimized_books` row is gone, under the same profile locks.
 - `epubkit/` — vendored copy of
@@ -572,7 +579,7 @@ walk the library at the same time.
 
 ## 11. Testing
 
-`tests/` (353 tests, `uv run pytest`):
+`tests/` (366 tests, `uv run pytest`):
 
 - `conftest.py` — temp `Settings` (fresh data dir + SQLite per test), the
   `build_app` factory (runs `alembic upgrade head` unless `migrate=False`,
@@ -586,8 +593,8 @@ walk the library at the same time.
   `entry_links`, `links_by_rel`).
 - Suite ↔ subsystem: `test_auth`, `test_library`, `test_scanner`,
   `test_auto_scan`, `test_opds`, `test_progression`, `test_optimizer`,
-  `test_health`, `test_device_catalogs`, plus
-  `test_app`/`test_config`/`test_database`.
+  `test_optimizer_admin`, `test_health`, `test_device_catalogs`, plus
+  `test_app`/`test_config`/`test_database`/`test_users`.
 - Recurring patterns: the shared feed helpers for parsing feeds and
   grouping links by `rel`; suite-local session helpers (Basic `_headers`,
   `_get`/`_put`, `_scan`); `insert_books()` for rows that don't need real

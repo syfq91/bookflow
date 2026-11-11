@@ -60,6 +60,15 @@ scan manually only.
 folder name opens an FTP-style browser over the index. Click down through
 folder levels, then click a file to download the original.
 
+**Configure device optimizer** — under **Optimizer** (`/admin/optimizer`),
+administrators can customize target screen dimensions, comic conversion
+options (Floyd-Steinberg dithering, spread splitting/rotation), and EPUB
+optimization settings (image quality, grayscale, contrast boost, font
+stripping, stylesheet cleanup) for each profile. Profiles can also be
+enabled or disabled individually. Updating a profile's settings
+automatically purges its cached renditions so new downloads re-generate
+with the latest parameters.
+
 **Read from a client** — point any OPDS client at the root feed:
 
 ```

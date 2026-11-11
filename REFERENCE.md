@@ -105,6 +105,29 @@ can:
 Reader accounts access the OPDS catalog and sync reading progression, but
 cannot access the `/admin` interface.
 
+### Optimizer profiles
+
+Manage on-demand device optimization settings under **Optimizer**
+(`/admin/optimizer`). Administrators can configure each hardware profile
+(`x3`, `x4`):
+
+- **Enable / Disable**: toggle the device catalog (`/opdsx3`, `/opdsx4`);
+  when disabled, the catalog link is hidden from the root `/opds` feed and
+  direct requests return `404`
+- **Target resolution**: screen width and height in pixels (clamped to
+  `>= 100`)
+- **Comic conversion (CBZ → XTC)**: Floyd-Steinberg 1-bit dithering,
+  two-page spread splitting, and landscape spread rotation
+- **EPUB optimization (epubkit)**: image compression quality (`1–100`),
+  grayscale conversion, contrast boost, embedded font stripping, stylesheet
+  cleanup, and text/quote normalization
+- **Cache purge**: view cache metrics (file count and total size) with
+  per-profile or global cache clearing buttons
+
+Saving changes to a profile automatically clears its cached renditions,
+ensuring subsequent client downloads immediately build with the updated
+options.
+
 ## OPDS catalog
 
 Point any OPDS client at `/opds` using HTTP Basic authentication.
@@ -125,7 +148,7 @@ only then answers with its own error document. The same applies to
 
 | Endpoint              | Contents                                              |
 | --------------------- | ----------------------------------------------------- |
-| `/opds`               | Root navigation feed: the folder view — one entry per registered folder, plus All Books, Recent, Authors, Search and the X3/X4 catalog links |
+| `/opds`               | Root navigation feed: the folder view — one entry per registered folder, plus All Books, Recent, Authors, Search and active X3/X4 catalog links (when enabled) |
 | `/opds/books?page=N`  | All books, A→Z, 50 per page                           |
 | `/opds/recent?page=N` | Books newest first                                    |
 | `/opds/authors`       | Authors grouped by name, with book counts             |
@@ -136,13 +159,13 @@ only then answers with its own error document. The same applies to
 | `/opds/books/<id>`    | Feed for a single book                                |
 | `/opds/download/<id>` | The book file itself (attachment)                     |
 | `/opds/cover/<id>`    | Cover image extracted from the EPUB or CBZ on demand (`404` when absent) |
-| `/opdsx3`            | X3 catalog root: the folder view with X3-optimized acquisitions, plus Search |
+| `/opdsx3`            | X3 catalog root: the folder view with X3-optimized acquisitions, plus Search (returns `404` when disabled) |
 | `/opdsx3/books?page=N`, `/opdsx3/recent?page=N` | Flat feeds of the X3 catalog, EPUBs and CBZs via the X3 download |
 | `/opdsx3/authors`, `/opdsx3/authors/<name>`, `/opdsx3/search?q=…` | Author index, author feed and search for the X3 catalog |
 | `/opdsx3/books/<id>` | Single-book feed in the X3 catalog                    |
 | `/opdsx3/download/<id>` | EPUB or XTC (from CBZ) optimized for the Xteink X3 (on demand, cached) |
 | `/opdsx3/folders`, `/opdsx3/folders/<id>?path=…` | The folder hierarchy with X3-optimized acquisitions |
-| `/opdsx4`            | X4 catalog root: same as `/opdsx3`                  |
+| `/opdsx4`            | X4 catalog root: same as `/opdsx3` (returns `404` when disabled) |
 | `/opdsx4/books`, `/opdsx4/recent`, `/opdsx4/authors`, `/opdsx4/search`, `/opdsx4/folders`, `/opdsx4/folders/<id>?path=…` | The X3 URLs above with X4 acquisitions |
 | `/opdsx4/books/<id>` | Single-book feed in the X4 catalog                    |
 | `/opdsx4/download/<id>` | EPUB or XTC (from CBZ) optimized for the Xteink X4 (on demand, cached) |
