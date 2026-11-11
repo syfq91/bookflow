@@ -43,7 +43,7 @@ def init_engine(settings: Settings) -> Engine:
     """Initialize the process-wide engine and session factory."""
     global _engine, _session_factory
     _engine = get_engine(settings)
-    _session_factory = sessionmaker(bind=_engine, expire_on_commit=False)
+    _session_factory = sessionmaker(_engine, expire_on_commit=False)
     return _engine
 
 
