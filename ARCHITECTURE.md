@@ -69,8 +69,7 @@ No FastAPI, no Redis, no Celery, no second HTTP service.
 bookflow/
 ├── pyproject.toml / uv.lock      deps, ruff + pytest config
 ├── alembic.ini / migrations/     schema migrations (0001_initial_schema)
-├── README.md / ARCHITECTURE.md / REFERENCE.md / AGENTS.md
-├── docs/                         audits, design specifications, and milestone plans
+├── README.md / ARCHITECTURE.md / REFERENCE.md / AGENTS.md / DESIGN.md
 ├── .env.example                  documented OPDS_* variables
 │
 ├── src/bookflow/
