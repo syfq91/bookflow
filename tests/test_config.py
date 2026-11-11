@@ -238,3 +238,25 @@ def test_app_uses_generated_secret(tmp_path: Path, build_app) -> None:
     stored = (settings.data_dir / ".session_secret").read_text(encoding="ascii")
 
     assert application.secret_key == stored.strip()
+
+
+def test_time_utilities() -> None:
+    from datetime import UTC, datetime
+
+    from bookflow.utils import as_aware, as_naive, mtime_to_datetime, utcnow
+
+    now = utcnow()
+    assert now.tzinfo is None
+
+    aware = as_aware(now)
+    assert aware.tzinfo == UTC
+    assert as_aware(aware) == aware
+
+    naive = as_naive(aware)
+    assert naive.tzinfo is None
+    assert naive == now
+
+    from_mtime = mtime_to_datetime(0.0)
+    assert from_mtime == datetime(1970, 1, 1, 0, 0, 0)
+    assert from_mtime.tzinfo is None
+

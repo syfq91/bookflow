@@ -26,6 +26,7 @@ from sqlalchemy.exc import OperationalError
 from bookflow.auth.decorators import login_required, require_csrf
 from bookflow.auth.service import DEFAULT_HASHER, USER_ID_SESSION_KEY
 from bookflow.config import Settings
+from bookflow.constants import FOLDER_SEGMENTS_LIMIT, PAGE_SIZE
 from bookflow.database.database import session_scope
 from bookflow.database.models import (
     Book,
@@ -73,11 +74,6 @@ class DashboardStats(TypedDict):
     scan_errors: int
     cache: dict[str, int]
     db_error: NotRequired[str]
-
-
-PAGE_SIZE = 50
-
-FOLDER_SEGMENTS_LIMIT = 500
 
 
 @bp.get("/")

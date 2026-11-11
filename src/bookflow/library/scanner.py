@@ -11,7 +11,7 @@ import os
 import threading
 import time
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 from sqlalchemy import select
@@ -21,6 +21,7 @@ from bookflow.database.database import session_scope
 from bookflow.database.models import Book, LibraryFolder
 from bookflow.library.metadata import extract_metadata
 from bookflow.library.paths import resolve_readable_dir
+from bookflow.utils import mtime_to_datetime, utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +131,7 @@ def _scan(folder_id: int, extensions: tuple[str, ...]) -> ScanResult:
             _reconcile(session, folder_id, root, found, fields, result)
 
         result.duration = time.monotonic() - started
-        folder.last_scan_at = _utcnow()
+        folder.last_scan_at = utcnow()
         folder.last_scan_duration = result.duration
         folder.last_scan_status = result.status
         folder.last_scan_error = result.error_summary
@@ -157,7 +158,7 @@ def _changed_fields(
     """Parse metadata for every file that is new or changed since ``known``."""
     fields: dict[str, dict[str, object]] = {}
     for relative_path, (size, mtime) in sorted(found.items()):
-        modified = _mtime_to_datetime(mtime)
+        modified = mtime_to_datetime(mtime)
         if known.get(relative_path) != (size, modified):
             fields[relative_path] = _fields(root / relative_path, size, modified)
     return fields
@@ -180,7 +181,7 @@ def _reconcile(
 
     for relative_path, (size, mtime) in sorted(found.items()):
         book = existing.get(relative_path)
-        modified = _mtime_to_datetime(mtime)
+        modified = mtime_to_datetime(mtime)
         if (
             book is not None
             and book.file_size == size
@@ -259,11 +260,3 @@ def _unavailable_reason(root: Path) -> str | None:
     if error is None:
         return None
     return f"Folder is unavailable: {root} ({error})"
-
-
-def _utcnow() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
-
-
-def _mtime_to_datetime(mtime: float) -> datetime:
-    return datetime.fromtimestamp(mtime, tz=UTC).replace(tzinfo=None)

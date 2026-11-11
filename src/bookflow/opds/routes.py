@@ -23,6 +23,7 @@ from flask import (
 from sqlalchemy import ColumnElement, and_, false, func, or_, select
 from werkzeug.exceptions import HTTPException
 
+from bookflow.constants import FOLDER_SEGMENTS_LIMIT, PAGE_SIZE
 from bookflow.database.database import session_scope
 from bookflow.database.models import Book, LibraryFolder
 from bookflow.library.metadata import extract_cover
@@ -53,8 +54,6 @@ OPDS_URL_PREFIXES = ("/opds", "/opdsx3", "/opdsx4")
 
 bp.before_request(partial(require_basic_auth, skip="opds.authentication"))
 
-PAGE_SIZE = 50
-FOLDER_SEGMENTS_LIMIT = 500
 PATH_MAX_DEPTH = 16
 PATH_MAX_LENGTH = 1024
 

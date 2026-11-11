@@ -17,6 +17,7 @@ from bookflow.database.models import Book, Progression
 from bookflow.opds.auth import require_basic_auth
 from bookflow.opds.generator import PROGRESSION_TYPE
 from bookflow.optimizer.locks import progression_lock
+from bookflow.utils import as_aware, as_naive
 
 bp = Blueprint("progression", __name__, url_prefix="/opds/publications")
 
@@ -89,7 +90,7 @@ def update_publication_progression(book_id: int) -> Response:
         if created:
             row = Progression(user_id=user_id, book_id=book_id)
             session.add(row)
-        elif row.modified is not None and document.modified < _as_aware(
+        elif row.modified is not None and document.modified < as_aware(
             row.modified
         ):
             abort(409)
@@ -106,7 +107,7 @@ def update_publication_progression(book_id: int) -> Response:
             )
             if row is None:
                 raise
-            if row.modified is not None and document.modified < _as_aware(
+            if row.modified is not None and document.modified < as_aware(
                 row.modified
             ):
                 abort(409)
@@ -222,7 +223,7 @@ def _to_document(row: Progression) -> dict[str, object]:
     if row.title is not None:
         document["title"] = row.title
     document["modified"] = _format_timestamp(
-        _as_aware(row.modified) if row.modified is not None else EPOCH
+        as_aware(row.modified) if row.modified is not None else EPOCH
     )
     document["device"] = {"id": row.device_id, "name": row.device_name}
     document["progression"] = row.progression
@@ -233,7 +234,7 @@ def _to_document(row: Progression) -> dict[str, object]:
 
 def _apply_progression_document(row: Progression, document: _Document) -> None:
     row.progression = document.progression
-    row.modified = _as_naive(document.modified)
+    row.modified = as_naive(document.modified)
     row.device_id = document.device_id
     row.device_name = document.device_name
     row.title = document.title
@@ -245,13 +246,3 @@ def _format_timestamp(value: datetime) -> str:
     if stamp.microsecond:
         return stamp.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
     return stamp.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def _as_aware(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
-
-
-def _as_naive(value: datetime) -> datetime:
-    return value.astimezone(UTC).replace(tzinfo=None)
