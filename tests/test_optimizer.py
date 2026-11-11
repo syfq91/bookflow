@@ -675,3 +675,46 @@ def test_cbz_scan_prunes_cache_files_of_removed_books(
     assert not cache_file.exists()
     assert _optimized_rows(book_id) == []
 
+
+def test_clear_profile_cache_only_removes_target_profile(
+    client, app, folder_id, root
+) -> None:
+    from bookflow.optimizer.service import clear_profile_cache
+
+    book_id, _source = _library_book(root, folder_id, "dual")
+    assert _get(client, f"/opdsx3/download/{book_id}").status_code == 200
+    assert _get(client, f"/opdsx4/download/{book_id}").status_code == 200
+
+    x3_file = app.config["SETTINGS"].x3_cache_dir / f"{book_id}.epub"
+    x4_file = app.config["SETTINGS"].x4_cache_dir / f"{book_id}.epub"
+    assert x3_file.is_file()
+    assert x4_file.is_file()
+
+    with app.app_context():
+        files, rows = clear_profile_cache("x3")
+    assert files == 1
+    assert rows == 1
+    assert not x3_file.exists()
+    assert x4_file.is_file()
+
+
+def test_disabled_profile_raises_optimization_error(
+    client, app, folder_id, root
+) -> None:
+    from sqlalchemy import update
+
+    from bookflow.database.database import session_scope
+    from bookflow.database.models import DeviceProfile
+    from bookflow.optimizer.service import OptimizationError, optimize_book
+
+    book_id, source = _library_book(root, folder_id, "disabled_prof")
+    with session_scope() as session:
+        session.execute(
+            update(DeviceProfile)
+            .where(DeviceProfile.name == "x3")
+            .values(enabled=False)
+        )
+
+    with pytest.raises(OptimizationError, match="disabled"):
+        optimize_book(book_id, "x3", source)
+

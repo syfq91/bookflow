@@ -7,6 +7,7 @@ import shutil
 import threading
 import time
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 
 from flask import current_app
@@ -18,7 +19,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from bookflow.config import Settings
 from bookflow.database.database import session_scope
-from bookflow.database.models import OptimizedBook
+from bookflow.database.models import DeviceProfile, OptimizedBook
 from bookflow.optimizer.cbz2xtc import ConvertOptions, convert_cbz_to_xtc
 from bookflow.optimizer.epubkit import ProcessingOptions, process_epub
 from bookflow.optimizer.locks import profile_lock
@@ -27,6 +28,109 @@ logger = logging.getLogger(__name__)
 
 PROFILES = ("x3", "x4")
 SCRATCH_EXPIRY_SECONDS = 900
+
+
+@dataclass(frozen=True, slots=True)
+class DeviceProfileConfig:
+    """Configured parameters for an optimization profile."""
+
+    name: str
+    display_name: str
+    enabled: bool
+    target_width: int
+    target_height: int
+    cbz_dither: bool
+    cbz_split_spreads: bool
+    cbz_rotate_spreads: bool
+    epub_grayscale: bool
+    epub_contrast_boost: bool
+    epub_quality: int
+    epub_remove_fonts: bool
+    epub_remove_unused_css: bool
+    epub_text_cleanup: bool
+
+
+DEFAULT_PROFILES: dict[str, DeviceProfileConfig] = {
+    "x3": DeviceProfileConfig(
+        name="x3",
+        display_name="Xteink X3",
+        enabled=True,
+        target_width=528,
+        target_height=792,
+        cbz_dither=True,
+        cbz_split_spreads=True,
+        cbz_rotate_spreads=True,
+        epub_grayscale=True,
+        epub_contrast_boost=True,
+        epub_quality=70,
+        epub_remove_fonts=True,
+        epub_remove_unused_css=True,
+        epub_text_cleanup=True,
+    ),
+    "x4": DeviceProfileConfig(
+        name="x4",
+        display_name="Xteink X4",
+        enabled=True,
+        target_width=480,
+        target_height=800,
+        cbz_dither=True,
+        cbz_split_spreads=True,
+        cbz_rotate_spreads=True,
+        epub_grayscale=True,
+        epub_contrast_boost=True,
+        epub_quality=70,
+        epub_remove_fonts=True,
+        epub_remove_unused_css=True,
+        epub_text_cleanup=True,
+    ),
+}
+
+
+def get_device_profile_config(profile_name: str) -> DeviceProfileConfig:
+    """Return the profile's configuration from the database, or sensible defaults."""
+    try:
+        with session_scope() as session:
+            row = session.scalar(
+                select(DeviceProfile).where(DeviceProfile.name == profile_name)
+            )
+            if row is not None:
+                return DeviceProfileConfig(
+                    name=row.name,
+                    display_name=row.display_name,
+                    enabled=row.enabled,
+                    target_width=row.target_width,
+                    target_height=row.target_height,
+                    cbz_dither=row.cbz_dither,
+                    cbz_split_spreads=row.cbz_split_spreads,
+                    cbz_rotate_spreads=row.cbz_rotate_spreads,
+                    epub_grayscale=row.epub_grayscale,
+                    epub_contrast_boost=row.epub_contrast_boost,
+                    epub_quality=row.epub_quality,
+                    epub_remove_fonts=row.epub_remove_fonts,
+                    epub_remove_unused_css=row.epub_remove_unused_css,
+                    epub_text_cleanup=row.epub_text_cleanup,
+                )
+    except Exception:
+        pass
+    return DEFAULT_PROFILES.get(
+        profile_name,
+        DeviceProfileConfig(
+            name=profile_name,
+            display_name=profile_name.upper(),
+            enabled=True,
+            target_width=480,
+            target_height=800,
+            cbz_dither=True,
+            cbz_split_spreads=True,
+            cbz_rotate_spreads=True,
+            epub_grayscale=True,
+            epub_contrast_boost=True,
+            epub_quality=70,
+            epub_remove_fonts=True,
+            epub_remove_unused_css=True,
+            epub_text_cleanup=True,
+        ),
+    )
 
 # Tracks temp files active in the current worker. In multi-worker deployments,
 # each worker manages its own set; SCRATCH_EXPIRY_SECONDS provides a 15-minute
@@ -48,6 +152,9 @@ def optimize_book(book_id: int, profile: str, source: Path) -> Path:
     """
     if profile not in PROFILES:
         raise OptimizationError(f"unknown profile: {profile}")
+    cfg = get_device_profile_config(profile)
+    if not cfg.enabled:
+        raise OptimizationError(f"profile {profile} is disabled")
     stat = source.stat()
     source_mtime = int(stat.st_mtime * 1000)
     source_size = stat.st_size
@@ -95,6 +202,41 @@ def clear_optimized_cache() -> tuple[int, int]:
         rows = int(session.execute(delete(OptimizedBook)).rowcount or 0)
     logger.info(
         "cleared optimization cache: %d file(s), %d row(s)", files, rows
+    )
+    return files, rows
+
+
+def clear_profile_cache(
+    profile: str, settings: Settings | None = None
+) -> tuple[int, int]:
+    """Delete every cached rendition and index row for a single profile."""
+    if settings is None:
+        settings = current_app.config["SETTINGS"]
+    directory = settings.cache_dir / profile
+    files = 0
+    if directory.is_dir():
+        for entry in sorted(directory.iterdir()):
+            if entry.is_dir():
+                files += _sweep_scratch(entry)
+                continue
+            book_id = _book_id_of(entry)
+            if book_id is None:
+                entry.unlink(missing_ok=True)
+                files += 1
+                continue
+            with profile_lock(book_id, profile):
+                if entry.is_file():
+                    entry.unlink(missing_ok=True)
+                    files += 1
+    with session_scope() as session:
+        rows = int(
+            session.execute(
+                delete(OptimizedBook).where(OptimizedBook.profile == profile)
+            ).rowcount
+            or 0
+        )
+    logger.info(
+        "cleared profile %s cache: %d file(s), %d row(s)", profile, files, rows
     )
     return files, rows
 
@@ -236,6 +378,7 @@ def _generate(
     tmp_dir = cache_file.parent / ".tmp"
     tmp_dir.mkdir(parents=True, exist_ok=True)
     tmp_file = tmp_dir / f"{uuid.uuid4().hex}{cache_file.suffix}"
+    cfg = get_device_profile_config(profile)
     with _scratch_guard:
         _scratch_running.add(tmp_file)
     try:
@@ -244,7 +387,15 @@ def _generate(
             report = process_epub(
                 str(source),
                 str(tmp_file),
-                options=ProcessingOptions(device=profile),
+                options=ProcessingOptions(
+                    device=profile,
+                    grayscale=cfg.epub_grayscale,
+                    contrast_boost=cfg.epub_contrast_boost,
+                    quality=cfg.epub_quality,
+                    remove_fonts=cfg.epub_remove_fonts,
+                    remove_unused_css=cfg.epub_remove_unused_css,
+                    text_cleanup=cfg.epub_text_cleanup,
+                ),
             )
             if not report.success:
                 logger.warning(
@@ -256,12 +407,12 @@ def _generate(
                 )
                 raise OptimizationError(report.error or "optimization failed")
         elif suffix == ".cbz":
-            target_width = 480 if profile == "x4" else 528
-            target_height = 800 if profile == "x4" else 792
             opts = ConvertOptions(
-                target_width=target_width,
-                target_height=target_height,
-                dither=True,
+                target_width=cfg.target_width,
+                target_height=cfg.target_height,
+                dither=cfg.cbz_dither,
+                split_spreads=cfg.cbz_split_spreads,
+                rotate_spreads=cfg.cbz_rotate_spreads,
             )
             success, error = convert_cbz_to_xtc(source, tmp_file, options=opts)
             if not success:
