@@ -44,7 +44,11 @@ from bookflow.opds.generator import (
     nav_entry,
     navigation_feed,
 )
-from bookflow.optimizer.service import OptimizationError, optimize_book
+from bookflow.optimizer.service import (
+    OptimizationError,
+    get_device_profile_config,
+    optimize_book,
+)
 
 bp = Blueprint("opds", __name__)
 
@@ -52,7 +56,17 @@ bp = Blueprint("opds", __name__)
 # every rule carries its full path instead of a shared url_prefix.
 OPDS_URL_PREFIXES = ("/opds", "/opdsx3", "/opdsx4")
 
+
+def _check_profile_enabled() -> None:
+    path = request.path
+    if path.startswith("/opdsx3") and not get_device_profile_config("x3").enabled:
+        abort(404)
+    if path.startswith("/opdsx4") and not get_device_profile_config("x4").enabled:
+        abort(404)
+
+
 bp.before_request(partial(require_basic_auth, skip="opds.authentication"))
+bp.before_request(_check_profile_enabled)
 
 PATH_MAX_DEPTH = 16
 PATH_MAX_LENGTH = 1024
@@ -118,10 +132,12 @@ def _catalog_root(profile: str | None) -> Response:
             )
         )
     if profile is None:
-        for name, href in (
-            ("X3 Catalog", url_for("opds.x3_feed")),
-            ("X4 Catalog", url_for("opds.x4_feed")),
+        for name, href, p_name in (
+            ("X3 Catalog", url_for("opds.x3_feed"), "x3"),
+            ("X4 Catalog", url_for("opds.x4_feed"), "x4"),
         ):
+            if not get_device_profile_config(p_name).enabled:
+                continue
             links.append(
                 Link(SUBSECTION_REL, href, NAVIGATION_TYPE, title=name)
             )

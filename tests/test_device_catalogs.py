@@ -440,3 +440,30 @@ def test_cbz_acquisition_link_from_device_feed_resolves_and_rewrites(
     assert resp.headers["Content-Type"] == "application/vnd.xteink.xtc"
     assert resp.data[:4] == b"XTC\x00"
 
+
+def test_disabled_profile_hidden_from_root_and_returns_404(client) -> None:
+    from sqlalchemy import update
+
+    from bookflow.database.database import session_scope
+    from bookflow.database.models import DeviceProfile
+
+    with session_scope() as session:
+        session.execute(
+            update(DeviceProfile)
+            .where(DeviceProfile.name == "x3")
+            .values(enabled=False)
+        )
+
+    feed = parse_feed(_get(client, "/opds"))
+    sections = _section_titles(feed)
+    entries = _entry_sections(feed)
+
+    assert "X3 Catalog" not in sections
+    assert "X3 Catalog" not in entries
+    assert "X4 Catalog" in sections
+    assert "X4 Catalog" in entries
+
+    assert _get(client, "/opdsx3").status_code == 404
+    assert _get(client, "/opdsx3/books").status_code == 404
+    assert _get(client, "/opdsx4").status_code == 200
+
