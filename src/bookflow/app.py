@@ -31,6 +31,8 @@ from bookflow.opds.progression import problem_document
 from bookflow.opds.routes import OPDS_URL_PREFIXES, error_document
 from bookflow.opds.routes import bp as opds_bp
 
+logger = logging.getLogger(__name__)
+
 
 def ensure_admin_user(settings: Settings) -> None:
     """Ensure the configured OPDS_ADMIN_USERNAME exists with OPDS_ADMIN_PASSWORD."""
@@ -55,8 +57,8 @@ def ensure_admin_user(settings: Settings) -> None:
                 except (InvalidHashError, VerificationError):
                     admin.password_hash = DEFAULT_HASHER.hash(settings.admin_password)
                     admin.is_admin = True
-    except SQLAlchemyError:
-        pass
+    except SQLAlchemyError as exc:
+        logger.warning("Could not ensure admin user: %s", exc)
 
 
 def _is_admin() -> bool:
