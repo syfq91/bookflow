@@ -34,9 +34,25 @@ def authenticate(
         )
     if authorization is None or authorization.type != "basic":
         return unauthorized()
+
+    limiter = current_app.extensions.get("login_rate_limiter")
+    key = (request.remote_addr or "unknown", authorization.username or "")
+    if limiter is not None and limiter.is_blocked(key):
+        return Response(
+            "Too many failed login attempts. Please try again later.\n",
+            status=429,
+            content_type="text/plain; charset=utf-8",
+        )
+
     user = verifier.verify_user(authorization.username, authorization.password)
     if user is None:
+        if limiter is not None:
+            limiter.record_failure(key)
         return unauthorized()
+
+    if limiter is not None:
+        limiter.reset(key)
+
     g.current_user = user
     return None
 

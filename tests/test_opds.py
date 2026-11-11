@@ -107,6 +107,24 @@ def test_wrong_password_returns_401(client) -> None:
     assert resp.status_code == 401
 
 
+def test_repeated_wrong_passwords_rate_limited(client) -> None:
+    for _ in range(5):
+        resp = client.get(
+            "/opds",
+            headers=_headers(username="attacker", password="wrong"),
+            environ_overrides={"REMOTE_ADDR": "192.0.2.1"},
+        )
+        assert resp.status_code == 401
+
+    blocked = client.get(
+        "/opds",
+        headers=_headers(username="attacker", password="wrong"),
+        environ_overrides={"REMOTE_ADDR": "192.0.2.1"},
+    )
+    assert blocked.status_code == 429
+    assert b"Too many failed login attempts" in blocked.data
+
+
 def test_wrong_username_returns_401(client) -> None:
     resp = client.get("/opds", headers=_headers(username="root"))
 
