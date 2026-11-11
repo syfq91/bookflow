@@ -17,6 +17,7 @@
         <a href="{{ url_for('admin.dashboard') }}">Dashboard</a>
         <a href="{{ url_for('admin.folders') }}">Library</a>
         <a href="{{ url_for('admin.users') }}">Users</a>
+        <a href="{{ url_for('admin.optimizer_settings') }}">Optimizer</a>
         <a href="{{ url_for('admin.health') }}">Health</a>
         <form class="inline" method="post" action="{{ url_for('auth.logout') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />

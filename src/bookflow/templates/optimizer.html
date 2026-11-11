@@ -1,0 +1,134 @@
+{% extends "layout.html" %}
+
+{% block title %}Optimizer Profiles · BookFlow{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Optimizer Profiles</h1>
+    <p class="muted">Tune on-demand e-ink rendering options and screen resolutions for device profiles.</p>
+  </div>
+</div>
+
+<div class="grid">
+  {% for p in profiles %}
+  <section class="card" style="margin-bottom: 1.5rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+      <h2 style="margin: 0;">{{ p.display_name }} ({{ p.name }})</h2>
+      {% if p.enabled %}
+      <span class="badge badge-ok">Enabled</span>
+      {% else %}
+      <span class="badge badge-muted">Disabled</span>
+      {% endif %}
+    </div>
+
+    <div style="background: var(--bg); border-radius: 6px; padding: 0.75rem 1rem; margin-bottom: 1.25rem; display: flex; justify-content: space-between; align-items: center;">
+      <div>
+        <span class="muted" style="font-size: 0.85rem;">Cached Renditions</span><br />
+        <strong>{{ p.cache_count }} book(s) ({{ p.cache_size|filesizeformat }})</strong>
+      </div>
+      {% if p.cache_count > 0 %}
+      <form method="post" action="{{ url_for('admin.optimizer_clear_profile_cache', profile_name=p.name) }}" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        <button type="submit" class="button secondary" style="padding: 0.35rem 0.75rem; font-size: 0.85rem;" onclick="return confirm('Clear cached files for {{ p.display_name }}?');">
+          Purge Cache
+        </button>
+      </form>
+      {% endif %}
+    </div>
+
+    <form method="post" action="{{ url_for('admin.optimizer_update_profile', profile_name=p.name) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+
+      <div style="margin-bottom: 1rem;">
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+          <input type="checkbox" name="enabled" {% if p.enabled %}checked{% endif %} />
+          <strong>Enable {{ p.name.upper() }} catalog and on-demand conversion</strong>
+        </label>
+        <span class="muted" style="font-size: 0.85rem; display: block; margin-left: 1.5rem;">
+          When disabled, /opds{{ p.name }} is hidden from the root catalog and returns 404.
+        </span>
+      </div>
+
+      <h3 style="font-size: 1rem; margin-top: 1.25rem; margin-bottom: 0.5rem; border-bottom: 1px solid var(--border); padding-bottom: 0.25rem;">
+        Display Resolution
+      </h3>
+      <div style="display: flex; gap: 1rem; margin-bottom: 1rem;">
+        <div style="flex: 1;">
+          <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.25rem;">Width (px)</label>
+          <input type="number" name="target_width" value="{{ p.target_width }}" min="100" max="4000" required style="width: 100%; padding: 0.4rem;" />
+        </div>
+        <div style="flex: 1;">
+          <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.25rem;">Height (px)</label>
+          <input type="number" name="target_height" value="{{ p.target_height }}" min="100" max="4000" required style="width: 100%; padding: 0.4rem;" />
+        </div>
+      </div>
+
+      <h3 style="font-size: 1rem; margin-top: 1.25rem; margin-bottom: 0.5rem; border-bottom: 1px solid var(--border); padding-bottom: 0.25rem;">
+        Comic Options (CBZ → XTC)
+      </h3>
+      <div style="margin-bottom: 0.5rem;">
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.9rem;">
+          <input type="checkbox" name="cbz_dither" {% if p.cbz_dither %}checked{% endif %} />
+          Apply Floyd-Steinberg 1-bit dithering
+        </label>
+      </div>
+      <div style="margin-bottom: 0.5rem;">
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.9rem;">
+          <input type="checkbox" name="cbz_split_spreads" {% if p.cbz_split_spreads %}checked{% endif %} />
+          Split two-page spreads into single pages
+        </label>
+      </div>
+      <div style="margin-bottom: 1rem;">
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.9rem;">
+          <input type="checkbox" name="cbz_rotate_spreads" {% if p.cbz_rotate_spreads %}checked{% endif %} />
+          Rotate landscape spreads
+        </label>
+      </div>
+
+      <h3 style="font-size: 1rem; margin-top: 1.25rem; margin-bottom: 0.5rem; border-bottom: 1px solid var(--border); padding-bottom: 0.25rem;">
+        EPUB Options (epubkit)
+      </h3>
+      <div style="margin-bottom: 0.75rem;">
+        <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.25rem;">Image Quality (1–100)</label>
+        <input type="number" name="epub_quality" value="{{ p.epub_quality }}" min="1" max="100" required style="width: 6rem; padding: 0.4rem;" />
+      </div>
+      <div style="margin-bottom: 0.5rem;">
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.9rem;">
+          <input type="checkbox" name="epub_grayscale" {% if p.epub_grayscale %}checked{% endif %} />
+          Convert images to e-ink grayscale
+        </label>
+      </div>
+      <div style="margin-bottom: 0.5rem;">
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.9rem;">
+          <input type="checkbox" name="epub_contrast_boost" {% if p.epub_contrast_boost %}checked{% endif %} />
+          Boost image contrast for low-bit-depth displays
+        </label>
+      </div>
+      <div style="margin-bottom: 0.5rem;">
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.9rem;">
+          <input type="checkbox" name="epub_remove_fonts" {% if p.epub_remove_fonts %}checked{% endif %} />
+          Strip embedded fonts (reduces file size)
+        </label>
+      </div>
+      <div style="margin-bottom: 0.5rem;">
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.9rem;">
+          <input type="checkbox" name="epub_remove_unused_css" {% if p.epub_remove_unused_css %}checked{% endif %} />
+          Clean bloated stylesheets
+        </label>
+      </div>
+      <div style="margin-bottom: 1.25rem;">
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.9rem;">
+          <input type="checkbox" name="epub_text_cleanup" {% if p.epub_text_cleanup %}checked{% endif %} />
+          Normalize typography and quotes
+        </label>
+      </div>
+
+      <div class="form-actions" style="margin-top: 1rem;">
+        <button type="submit">Save Changes</button>
+      </div>
+    </form>
+  </section>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -30,6 +30,7 @@ from bookflow.constants import FOLDER_SEGMENTS_LIMIT, PAGE_SIZE
 from bookflow.database.database import session_scope
 from bookflow.database.models import (
     Book,
+    DeviceProfile,
     LibraryFolder,
     OptimizedBook,
     Progression,
@@ -50,7 +51,11 @@ from bookflow.library.service import (
     list_folders,
     remove_folder,
 )
-from bookflow.optimizer.service import clear_optimized_cache, prune_orphaned_cache
+from bookflow.optimizer.service import (
+    clear_optimized_cache,
+    clear_profile_cache,
+    prune_orphaned_cache,
+)
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -253,6 +258,126 @@ def cache_clear() -> Response:
         "ok",
     )
     return redirect(url_for("admin.dashboard"))
+
+
+@bp.get("/optimizer")
+@login_required
+def optimizer_settings() -> str:
+    """Render the optimizer device profiles configuration page."""
+    with session_scope() as session:
+        profiles = list(
+            session.scalars(select(DeviceProfile).order_by(DeviceProfile.id))
+        )
+        cache_stats: dict[str, dict[str, int]] = {}
+        for row in session.execute(
+            select(
+                OptimizedBook.profile,
+                func.count(OptimizedBook.id),
+                func.coalesce(func.sum(OptimizedBook.optimized_size), 0),
+            ).group_by(OptimizedBook.profile)
+        ):
+            cache_stats[row[0]] = {
+                "count": int(row[1]),
+                "size": int(row[2]),
+            }
+
+    profile_data = [
+        {
+            "name": p.name,
+            "display_name": p.display_name,
+            "enabled": p.enabled,
+            "target_width": p.target_width,
+            "target_height": p.target_height,
+            "cbz_dither": p.cbz_dither,
+            "cbz_split_spreads": p.cbz_split_spreads,
+            "cbz_rotate_spreads": p.cbz_rotate_spreads,
+            "epub_grayscale": p.epub_grayscale,
+            "epub_contrast_boost": p.epub_contrast_boost,
+            "epub_quality": p.epub_quality,
+            "epub_remove_fonts": p.epub_remove_fonts,
+            "epub_remove_unused_css": p.epub_remove_unused_css,
+            "epub_text_cleanup": p.epub_text_cleanup,
+            "cache_count": cache_stats.get(p.name, {}).get("count", 0),
+            "cache_size": cache_stats.get(p.name, {}).get("size", 0),
+        }
+        for p in profiles
+    ]
+
+    return render_template(
+        "optimizer.html",
+        profiles=profile_data,
+    )
+
+
+@bp.post("/optimizer/<profile_name>")
+@login_required
+def optimizer_update_profile(profile_name: str) -> Response:
+    """Update settings for a device optimization profile and clear its cache."""
+    with session_scope() as session:
+        profile = session.scalar(
+            select(DeviceProfile).where(DeviceProfile.name == profile_name)
+        )
+        if profile is None:
+            abort(404)
+
+        try:
+            target_width = max(
+                int(request.form.get("target_width", profile.target_width)), 100
+            )
+            target_height = max(
+                int(request.form.get("target_height", profile.target_height)), 100
+            )
+            epub_quality = min(
+                max(int(request.form.get("epub_quality", profile.epub_quality)), 1),
+                100,
+            )
+        except ValueError:
+            flash("Invalid numeric dimension or quality value.", "error")
+            return redirect(url_for("admin.optimizer_settings"))
+
+        profile.enabled = request.form.get("enabled") == "on"
+        profile.target_width = target_width
+        profile.target_height = target_height
+        profile.cbz_dither = request.form.get("cbz_dither") == "on"
+        profile.cbz_split_spreads = request.form.get("cbz_split_spreads") == "on"
+        profile.cbz_rotate_spreads = request.form.get("cbz_rotate_spreads") == "on"
+        profile.epub_grayscale = request.form.get("epub_grayscale") == "on"
+        profile.epub_contrast_boost = request.form.get("epub_contrast_boost") == "on"
+        profile.epub_quality = epub_quality
+        profile.epub_remove_fonts = request.form.get("epub_remove_fonts") == "on"
+        profile.epub_remove_unused_css = (
+            request.form.get("epub_remove_unused_css") == "on"
+        )
+        profile.epub_text_cleanup = request.form.get("epub_text_cleanup") == "on"
+        display_name = profile.display_name
+
+    clear_profile_cache(profile_name)
+    flash(
+        f"Updated settings for {display_name}. Cached renditions were cleared.",
+        "ok",
+    )
+    return redirect(url_for("admin.optimizer_settings"))
+
+
+@bp.post("/optimizer/<profile_name>/clear-cache")
+@login_required
+def optimizer_clear_profile_cache(profile_name: str) -> Response:
+    """Clear cached renditions for a single profile."""
+    with session_scope() as session:
+        profile = session.scalar(
+            select(DeviceProfile).where(DeviceProfile.name == profile_name)
+        )
+        if profile is None:
+            abort(404)
+        display_name = profile.display_name
+
+    files, rows = clear_profile_cache(profile_name)
+    flash(
+        f"Cleared cache for {display_name}: {files} file(s) and {rows} "
+        "index row(s) removed.",
+        "ok",
+    )
+    return redirect(url_for("admin.optimizer_settings"))
 
 
 @bp.get("/health")
