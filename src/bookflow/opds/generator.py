@@ -44,8 +44,6 @@ DEFAULT_MIME_TYPE = "application/octet-stream"
 
 EPOCH = datetime(1970, 1, 1)
 
-ElementTree.register_namespace("", ATOM_NS)
-
 
 @dataclass(frozen=True, slots=True)
 class Link:
@@ -233,4 +231,5 @@ def _timestamp(value: datetime | None) -> str:
 
 
 def _serialize(feed: ElementTree.Element) -> bytes:
+    ElementTree.register_namespace("", ATOM_NS)
     return ElementTree.tostring(feed, encoding="utf-8", xml_declaration=True)
