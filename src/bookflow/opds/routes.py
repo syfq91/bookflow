@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import threading
+from collections import OrderedDict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -534,8 +535,22 @@ def download(book_id: int) -> Response:
 
 _COVER_CACHE_MAX_ENTRIES = 256
 _COVER_MAX_BYTES = 2 * 1024 * 1024
-_cover_cache: dict[tuple[int, int, int], tuple[bytes, str, str] | None] = {}
+_cover_cache: OrderedDict[
+    tuple[int, int, int], tuple[bytes, str, str] | None
+] = OrderedDict()
 _cover_cache_lock = threading.Lock()
+
+
+def _put_cover_cache(
+    cache_key: tuple[int, int, int],
+    entry: tuple[bytes, str, str] | None,
+) -> None:
+    with _cover_cache_lock:
+        if cache_key in _cover_cache:
+            _cover_cache.move_to_end(cache_key)
+        _cover_cache[cache_key] = entry
+        if len(_cover_cache) > _COVER_CACHE_MAX_ENTRIES:
+            _cover_cache.popitem(last=False)
 
 
 @bp.get("/opds/cover/<int:book_id>")
@@ -549,9 +564,15 @@ def cover(book_id: int) -> Response:
     cache_key = (book_id, stat.st_mtime_ns, stat.st_size)
 
     with _cover_cache_lock:
-        cached = _cover_cache.get(cache_key)
+        if cache_key in _cover_cache:
+            cached = _cover_cache[cache_key]
+            _cover_cache.move_to_end(cache_key)
+            is_cached = True
+        else:
+            cached = None
+            is_cached = False
 
-    if cache_key in _cover_cache:
+    if is_cached:
         if cached is None:
             abort(404)
         data, media_type, etag = cached
@@ -571,21 +592,15 @@ def cover(book_id: int) -> Response:
 
     extracted = extract_cover(target)
     if extracted is None:
-        with _cover_cache_lock:
-            if len(_cover_cache) >= _COVER_CACHE_MAX_ENTRIES:
-                _cover_cache.clear()
-            _cover_cache[cache_key] = None
+        _put_cover_cache(cache_key, None)
         abort(404)
 
     data, media_type = extracted
     digest = hashlib.sha256(data).hexdigest()
     etag = f'"{digest}"'
 
-    with _cover_cache_lock:
-        if len(_cover_cache) >= _COVER_CACHE_MAX_ENTRIES:
-            _cover_cache.clear()
-        if len(data) <= _COVER_MAX_BYTES:
-            _cover_cache[cache_key] = (data, media_type, etag)
+    if len(data) <= _COVER_MAX_BYTES:
+        _put_cover_cache(cache_key, (data, media_type, etag))
 
     if request.if_none_match and (
         request.if_none_match.contains(digest)
