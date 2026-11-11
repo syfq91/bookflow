@@ -143,6 +143,7 @@ def create_app(settings: Settings | None = None) -> Flask:
 
     @app.get("/healthz")
     def healthz() -> Response:
+        """Minimal liveness probe for orchestrators; unauthenticated and leak-free."""
         return jsonify(status="ok")
 
     @app.errorhandler(HTTPException)
