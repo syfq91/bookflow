@@ -11,6 +11,9 @@ from pathlib import Path
 
 from flask import current_app
 from sqlalchemy import delete, select
+
+# SQLite-specific upsert: BookFlow is exclusively designed for SQLite, where
+# INSERT ... ON CONFLICT DO UPDATE provides atomic single-statement caching.
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from bookflow.config import Settings
@@ -25,6 +28,9 @@ logger = logging.getLogger(__name__)
 PROFILES = ("x3", "x4")
 SCRATCH_EXPIRY_SECONDS = 900
 
+# Tracks temp files active in the current worker. In multi-worker deployments,
+# each worker manages its own set; SCRATCH_EXPIRY_SECONDS provides a 15-minute
+# grace period preventing sweepers from removing active files of sibling workers.
 _scratch_guard = threading.Lock()
 _scratch_running: set[Path] = set()
 
