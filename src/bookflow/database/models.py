@@ -181,3 +181,54 @@ class OptimizedBook(Base):
     )
 
     book: Mapped[Book] = relationship(back_populates="optimized")
+
+
+class DeviceProfile(Base):
+    """Configuration settings for a device optimization profile."""
+
+    __tablename__ = "device_profiles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(
+        String(32), unique=True, nullable=False, index=True
+    )
+    display_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    # Resolution
+    target_width: Mapped[int] = mapped_column(Integer, nullable=False)
+    target_height: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # CBZ / comic options
+    cbz_dither: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    cbz_split_spreads: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False
+    )
+    cbz_rotate_spreads: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False
+    )
+
+    # EPUB options
+    epub_grayscale: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False
+    )
+    epub_contrast_boost: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False
+    )
+    epub_quality: Mapped[int] = mapped_column(Integer, default=70, nullable=False)
+    epub_remove_fonts: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False
+    )
+    epub_remove_unused_css: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False
+    )
+    epub_text_cleanup: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+    )

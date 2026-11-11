@@ -154,3 +154,28 @@ def test_migration_0004_upgrade_and_downgrade(settings: Settings) -> None:
     reset_engine()
     engine = init_engine(settings)
     assert "users" in inspect(engine).get_table_names()
+    assert "device_profiles" in inspect(engine).get_table_names()
+
+
+def test_device_profiles_default_rows(settings: Settings) -> None:
+    from sqlalchemy import select
+
+    from bookflow.database.models import DeviceProfile
+
+    cfg = alembic_config(settings.database_url)
+    command.upgrade(cfg, "head")
+    init_engine(settings)
+
+    with session_scope() as session:
+        profiles = {
+            p.name: p for p in session.scalars(select(DeviceProfile)).all()
+        }
+        assert "x3" in profiles
+        assert "x4" in profiles
+        assert profiles["x3"].target_width == 528
+        assert profiles["x3"].target_height == 792
+        assert profiles["x4"].target_width == 480
+        assert profiles["x4"].target_height == 800
+        assert profiles["x3"].enabled is True
+        assert profiles["x4"].enabled is True
+
