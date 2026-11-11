@@ -1,6 +1,10 @@
 """Per-book locks serializing work that must not run twice at once.
 
 Registries are process-wide: each gunicorn worker keeps its own.
+Lock instances are lightweight (~50 bytes each) and persist across operations
+to prevent split-lock race conditions where concurrent callers could otherwise
+instantiate competing locks for the same resource. Memory footprint is strictly
+bounded by (indexed books × active device profiles + active users × books).
 """
 
 from __future__ import annotations

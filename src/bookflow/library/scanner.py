@@ -60,6 +60,7 @@ class ScanResult:
         return shown
 
 
+# Process-wide folder scan locks. Bounded by the number of configured library folders.
 _locks: dict[int, threading.Lock] = {}
 _locks_guard = threading.Lock()
 
