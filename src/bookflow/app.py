@@ -134,6 +134,13 @@ def create_app(settings: Settings | None = None) -> Flask:
     def index() -> Response:
         return redirect(url_for("admin.dashboard"))
 
+    @app.after_request
+    def set_security_headers(response: Response) -> Response:
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "same-origin")
+        return response
+
     @app.get("/healthz")
     def healthz() -> Response:
         return jsonify(status="ok")
