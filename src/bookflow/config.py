@@ -114,10 +114,9 @@ class Settings:
     @classmethod
     def from_env(cls) -> Settings:
         data_dir = Path(_env("OPDS_DATA_DIR", "./data")).expanduser().resolve()
-
-        database_url = os.environ.get("OPDS_DATABASE_URL")
-        if not database_url:
-            database_url = f"sqlite+pysqlite:///{data_dir / 'bookflow.db'}"
+        database_url = _env(
+            "OPDS_DATABASE_URL", f"sqlite+pysqlite:///{data_dir / 'bookflow.db'}"
+        )
 
         return cls(
             data_dir=data_dir,
