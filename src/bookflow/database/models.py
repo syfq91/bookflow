@@ -134,7 +134,9 @@ class Progression(Base):
         ForeignKey("books.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
-    progression: Mapped[float | None] = mapped_column(JSON, nullable=True)
+    progression: Mapped[dict | float | None] = mapped_column(
+        JSON, nullable=True
+    )
     modified: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     device_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
